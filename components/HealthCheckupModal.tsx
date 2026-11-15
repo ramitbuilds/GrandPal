@@ -106,8 +106,8 @@ export function HealthCheckupModal({
               className="w-16 h-16"
             />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5 text-blue-600 font-semibold text-xs">
+          <div className="flex-1">
+            <div className="flex items-center gap-1.5 text-blue-600 font-semibold text-xs mb-1">
               <Activity className="w-3.5 h-3.5" />
               <span>Doctor Pup Checkup</span>
             </div>

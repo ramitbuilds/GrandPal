@@ -1,24 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import Image from "next/image";
-import NumberFlow from "@number-flow/react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
 import { VectorPuppy } from "@/components/VectorPuppy";
 import { CaregiverPinModal } from "@/components/CaregiverPinModal";
-import { HealthCheckupModal } from "@/components/HealthCheckupModal";
+import { DoctorPupPhoneCall } from "@/components/DoctorPupPhoneCall";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import {
-  Activity,
-  Calendar,
   Check,
   Clock,
-  Heart,
   Lock,
-  Mail,
-  MapPin,
+  Mic,
+  Phone,
   Pill,
-  User,
+  Square,
 } from "lucide-react";
 
 interface Medication {
@@ -36,21 +33,6 @@ interface DoseLog {
   takenAt?: string;
 }
 
-interface Appointment {
-  id: string;
-  doctorName: string;
-  specialty: string;
-  date: string;
-  location: string;
-  notes?: string;
-}
-
-interface Memory {
-  id: string;
-  category: string;
-  keyFact: string;
-}
-
 interface SeniorProfile {
   id: string;
   name: string;
@@ -58,18 +40,32 @@ interface SeniorProfile {
   caregiverEmail: string;
   medications: Medication[];
   doseLogs: DoseLog[];
-  appointments: Appointment[];
-  memories: Memory[];
 }
+
+// Warm, uplifting quotes for seniors that rotate daily
+const DAILY_QUOTES = [
+  "Each new morning brings a fresh start. Take it easy and enjoy the quiet, gentle moments today.",
+  "A peaceful heart brings health to the whole body. Have a wonderful and restful day.",
+  "Take today one gentle step at a time, and remember you are deeply cared for.",
+  "Every day is a gift. Smile, breathe deeply, and enjoy your favorite cup of tea.",
+  "You bring warmth to everyone around you. Take good care of yourself today.",
+  "A gentle walk and a quiet mind bring sunshine to every morning.",
+  "Life is made of little moments of joy. Savor the day at your own comfortable pace.",
+];
 
 export default function Home() {
   const [senior, setSenior] = useState<SeniorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [dateString, setDateString] = useState("");
+  const [greeting, setGreeting] = useState("Good morning");
+  const [todayQuote, setTodayQuote] = useState(DAILY_QUOTES[0]);
   const [showPinModal, setShowPinModal] = useState(false);
-  const [showCheckupModal, setShowCheckupModal] = useState(false);
+  const [showPhoneCall, setShowPhoneCall] = useState(false);
   const [isCelebrating, setIsCelebrating] = useState(false);
+  const [isPupThinking, setIsPupThinking] = useState(false);
+  const [isPupSpeaking, setIsPupSpeaking] = useState(false);
+  const [textInput, setTextInput] = useState("");
 
   const loadData = useCallback(async () => {
     try {
@@ -94,7 +90,74 @@ export default function Home() {
         year: "numeric",
       })
     );
+
+    // Dynamic time-based greeting
+    const hour = now.getHours();
+    if (hour < 12) setGreeting("Good morning");
+    else if (hour < 17) setGreeting("Good afternoon");
+    else setGreeting("Good evening");
+
+    // Today's quote rotating based on day of month
+    const day = now.getDate();
+    setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
   }, [loadData]);
+
+  // Handle voice speech input from microphone button
+  const handleVoiceInput = useCallback(
+    async (spokenText: string) => {
+      if (!spokenText.trim() || !senior) return;
+
+      setIsPupThinking(true);
+      try {
+        const res = await fetch("/api/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            speech: spokenText,
+            seniorId: senior.id,
+          }),
+        });
+
+        const data = await res.json();
+        const reply = data.response || "I hear you! I am right here by your side.";
+
+        if (data.action === "DOSE_LOGGED") {
+          setIsCelebrating(true);
+          setTimeout(() => setIsCelebrating(false), 1400);
+          await loadData();
+          toast.success(reply);
+        }
+
+        // Play Doctor Pup's neural voice response!
+        await playNeuralVoice(reply, {
+          onStart: () => setIsPupSpeaking(true),
+          onEnd: () => setIsPupSpeaking(false),
+          onError: () => setIsPupSpeaking(false),
+        });
+      } catch (err) {
+        console.error("Voice input error:", err);
+        toast.error("Could not process voice. Please try again.");
+      } finally {
+        setIsPupThinking(false);
+      }
+    },
+    [senior, loadData]
+  );
+
+  const { isListening, transcript, startListening, stopListening } =
+    useSpeechRecognition((text) => handleVoiceInput(text));
+
+  const toggleMicrophone = async () => {
+    if (isListening) {
+      const captured = stopListening();
+      if (captured) {
+        handleVoiceInput(captured);
+      }
+    } else {
+      stopVoice();
+      await startListening();
+    }
+  };
 
   const markDoseAsTaken = async (medicationId: string, medicationName?: string) => {
     if (!senior || submittingId) return;
@@ -113,7 +176,7 @@ export default function Home() {
 
       if (res.ok) {
         setIsCelebrating(true);
-        setTimeout(() => setIsCelebrating(false), 1000);
+        setTimeout(() => setIsCelebrating(false), 1400);
         toast.success(
           medicationName
             ? `${medicationName} marked as taken. Good job!`
@@ -131,21 +194,20 @@ export default function Home() {
     }
   };
 
-  const completedMedIds = new Set<string>();
-  senior?.doseLogs?.forEach((log) => {
-    if (log.status === "TAKEN") {
-      completedMedIds.add(log.medicationId);
-    }
-  });
-
-  const totalCount = senior?.medications?.length ?? 0;
-  const takenCount = completedMedIds.size;
-  const allDone = totalCount > 0 && takenCount === totalCount;
+  const completedMedIds = useMemo(() => {
+    const set = new Set<string>();
+    senior?.doseLogs?.forEach((log) => {
+      if (log.status === "TAKEN") {
+        set.add(log.medicationId);
+      }
+    });
+    return set;
+  }, [senior?.doseLogs]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-6">
-        <p className="text-sm text-slate-500">Loading your profile...</p>
+        <p className="text-base font-medium text-slate-500">Loading your medicines...</p>
       </div>
     );
   }
@@ -153,44 +215,39 @@ export default function Home() {
   if (!senior) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-6">
-        <p className="text-sm text-slate-600">No profile found. Please refresh the page.</p>
+        <p className="text-base font-medium text-slate-600">No profile found. Please refresh the page.</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-white text-slate-800">
-      {/* Top Header */}
+      {/* Top Header: Simple and Uncluttered */}
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 flex items-center justify-center">
-              <VectorPuppy className="w-9 h-9" />
+            <div className="w-10 h-10 flex items-center justify-center">
+              <VectorPuppy className="w-10 h-10" />
             </div>
             <div>
-              <span className="text-base font-bold text-slate-900 block leading-tight">
+              <span className="text-lg font-bold text-slate-900 block leading-tight">
                 GrandPal
               </span>
               <span className="text-xs text-slate-500 block">
-                Daily Care Companion
+                Your Daily Health Companion
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="text-right">
-              <span className="text-xs font-medium text-slate-500 block">
-                {dateString}
-              </span>
-              <span className="text-xs font-semibold text-slate-700 block">
-                {senior.name}
-              </span>
-            </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-slate-600 hidden sm:block">
+              {dateString}
+            </span>
 
             <button
               type="button"
               onClick={() => setShowPinModal(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5 text-slate-500" />
               <span>Caregiver</span>
@@ -199,261 +256,233 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Main Senior Screen */}
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
 
-        {/* Welcome Mascot Banner */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+        {/* Mascot Banner with Greeting, Daily Quote, and Two Action Options */}
+        <div className="bg-slate-50/70 border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
           <div className="shrink-0">
             <PuppyMascot
-              state={submittingId ? "thinking" : isCelebrating ? "celebrating" : "idle"}
+              state={
+                submittingId || isPupThinking
+                  ? "thinking"
+                  : isCelebrating
+                  ? "celebrating"
+                  : isListening || isPupSpeaking
+                  ? "listening"
+                  : "idle"
+              }
               isCelebrating={isCelebrating}
-              className="w-32 h-32 sm:w-40 sm:h-40"
+              isSpeaking={isPupSpeaking}
+              className="w-36 h-36 sm:w-44 sm:h-44"
             />
           </div>
 
-          <div className="flex-1 text-center sm:text-left space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-              Hello, {senior.name}
+          <div className="flex-1 text-center sm:text-left space-y-3 w-full">
+            <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+              {greeting}, {senior.name}
             </h1>
-            <p className="text-sm sm:text-base text-slate-600 max-w-xl leading-relaxed">
-              {allDone ? (
-                "Great job! All your medicines for today are taken. You can relax and have a wonderful day."
-              ) : (
-                <span>
-                  You have taken <NumberFlow value={takenCount} /> of {totalCount} medicines today. Here is your daily schedule below.
-                </span>
-              )}
+
+            {/* Daily Inspiring Quote */}
+            <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed italic">
+              &ldquo;{todayQuote}&rdquo;
             </p>
 
-            <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5 font-medium">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>
-                  <NumberFlow value={takenCount} /> Taken
-                </span>
-              </span>
-              <span>•</span>
-              <span className="flex items-center gap-1.5 font-medium">
-                <Clock className="w-4 h-4 text-blue-600" />
-                <span>
-                  <NumberFlow value={totalCount - takenCount} /> Remaining
-                </span>
-              </span>
-              <span>•</span>
+            {/* The Two Action Options: Call Button & Microphone Button */}
+            <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-3">
+              {/* Option 1: Call Button */}
               <button
                 type="button"
-                onClick={() => setShowCheckupModal(true)}
-                className="flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-900 transition-colors"
+                onClick={() => {
+                  stopVoice();
+                  setShowPhoneCall(true);
+                }}
+                className="flex items-center gap-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 px-5 py-3 rounded-2xl shadow-xs transition-all cursor-pointer"
+                title="Call Doctor Pup on the phone"
               >
-                <Activity className="w-4 h-4 text-blue-600" />
-                <span>Health check with Doctor Pup</span>
+                <div className="w-7 h-7 rounded-full bg-emerald-700/60 flex items-center justify-center">
+                  <Phone className="w-4 h-4 fill-white text-emerald-600" />
+                </div>
+                <span>Call Doctor Pup</span>
+              </button>
+
+              {/* Option 2: Microphone Button */}
+              <button
+                type="button"
+                onClick={toggleMicrophone}
+                className={`flex items-center gap-2.5 text-sm font-bold px-5 py-3 rounded-2xl shadow-xs transition-all cursor-pointer active:scale-95 ${
+                  isListening
+                    ? "bg-rose-600 hover:bg-rose-700 text-white animate-pulse"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+                title={
+                  isListening
+                    ? "Listening... Click to finish speaking"
+                    : "Click to speak to Doctor Pup"
+                }
+              >
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                    isListening ? "bg-rose-700/60" : "bg-blue-700/60"
+                  }`}
+                >
+                  {isListening ? (
+                    <Square className="w-3.5 h-3.5 fill-white" />
+                  ) : (
+                    <Mic className="w-4 h-4 text-white" />
+                  )}
+                </div>
+                <span>{isListening ? "Stop & Send" : "Talk to Doctor Pup"}</span>
               </button>
             </div>
+
+            {/* Live listening caption or text fallback */}
+            {isListening ? (
+              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-rose-600 pt-1">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                <span>
+                  {transcript ? `"${transcript}"` : "Listening to you... Speak now, then click Stop & Send"}
+                </span>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!textInput.trim()) return;
+                  const msg = textInput.trim();
+                  setTextInput("");
+                  handleVoiceInput(msg);
+                }}
+                className="pt-1 flex items-center justify-center sm:justify-start gap-2 max-w-sm"
+              >
+                <input
+                  type="text"
+                  value={textInput}
+                  onChange={(e) => setTextInput(e.target.value)}
+                  placeholder="Or type a question for Doctor Pup..."
+                  className="bg-white border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 flex-1 shadow-2xs"
+                />
+                <button
+                  type="submit"
+                  disabled={!textInput.trim() || isPupThinking}
+                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                >
+                  Send
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
-        {/* Responsive Grid: Two Columns on Desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Medicines Section */}
+        <section className="space-y-4">
+          <div className="border-b border-slate-200 pb-3">
+            <h2 className="text-xl font-bold text-slate-900">
+              Today&apos;s Medicines
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Tap the button once you have taken your medicine.
+            </p>
+          </div>
 
-          {/* Left Column: Medicine Routine */}
-          <section className="lg:col-span-8 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-              <h2 className="text-base font-bold text-slate-900">
-                Today&apos;s Medicine Schedule
-              </h2>
-              <span className="text-xs font-medium text-slate-500">
-                <NumberFlow value={takenCount} /> of {totalCount} completed
-              </span>
-            </div>
+          <div className="space-y-4">
+            {senior.medications.map((med) => {
+              const isTaken = completedMedIds.has(med.id);
+              const isSubmitting = submittingId === med.id;
 
-            <div className="space-y-3">
-              {senior.medications.map((med) => {
-                const isTaken = completedMedIds.has(med.id);
-                const isSubmitting = submittingId === med.id;
-
-                return (
-                  <div
-                    key={med.id}
-                    className={`p-5 rounded-xl border transition-colors ${
-                      isTaken
-                        ? "bg-emerald-50/40 border-emerald-200"
-                        : "bg-white border-slate-200 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex items-start gap-3.5">
-                        <div
-                          className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                            isTaken
-                              ? "bg-emerald-600 text-white"
-                              : "bg-blue-50 text-blue-600 border border-blue-200"
-                          }`}
-                        >
-                          {isTaken ? (
-                            <Check className="w-5 h-5 stroke-[2.5]" />
-                          ) : (
-                            <Pill className="w-5 h-5" />
-                          )}
-                        </div>
-
-                        <div>
-                          <div className="flex items-baseline gap-2">
-                            <h3
-                              className={`text-base font-semibold ${
-                                isTaken ? "line-through text-slate-400" : "text-slate-900"
-                              }`}
-                            >
-                              {med.name}
-                            </h3>
-                            <span className="text-xs font-medium text-slate-500">
-                              {med.dosage}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600 mt-1">
-                            {med.instructions}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-2 text-xs font-medium text-slate-500">
-                            <Clock className="w-3.5 h-3.5" />
-                            <span>{med.timeOfDay}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-end shrink-0">
+              return (
+                <div
+                  key={med.id}
+                  className={`p-6 rounded-2xl border transition-all ${
+                    isTaken
+                      ? "bg-emerald-50/40 border-emerald-200"
+                      : "bg-white border-slate-200 hover:border-slate-300 shadow-2xs"
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+                    <div className="flex items-start gap-4">
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                          isTaken
+                            ? "bg-emerald-600 text-white"
+                            : "bg-blue-50 text-blue-600 border border-blue-200"
+                        }`}
+                      >
                         {isTaken ? (
-                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-md flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Taken</span>
-                          </span>
+                          <Check className="w-6 h-6 stroke-[3]" />
                         ) : (
-                          <button
-                            type="button"
-                            disabled={isSubmitting}
-                            onClick={() => markDoseAsTaken(med.id, med.name)}
-                            className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 px-4 py-2 rounded-md transition-colors"
-                          >
-                            {isSubmitting ? "Saving..." : "Mark as taken"}
-                          </button>
+                          <Pill className="w-6 h-6" />
                         )}
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
 
-          {/* Right Column: Appointments & Caregiver */}
-          <aside className="lg:col-span-4 space-y-6">
-
-            {/* Caregiver Card */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm border-b border-slate-200 pb-2">
-                <User className="w-4 h-4 text-blue-600" />
-                <span>Caregiver Contact</span>
-              </div>
-
-              <div className="text-xs space-y-1.5 text-slate-600">
-                <p className="font-medium text-slate-800">
-                  Primary Family Contact
-                </p>
-                <div className="flex items-center gap-1.5 text-slate-600">
-                  <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{senior.caregiverEmail}</span>
-                </div>
-                <p className="text-slate-500 text-[11px] pt-1">
-                  Daily updates and taken medicine logs are shared with your caregiver automatically.
-                </p>
-              </div>
-            </div>
-
-            {/* Upcoming Appointments */}
-            {senior.appointments && senior.appointments.length > 0 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
-                <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm border-b border-slate-200 pb-2">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  <span>Next Doctor Visit</span>
-                </div>
-
-                <div className="space-y-3">
-                  {senior.appointments.slice(0, 2).map((appt) => {
-                    const apptDate = new Date(appt.date).toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    });
-
-                    return (
-                      <div key={appt.id} className="text-xs space-y-1 text-slate-600">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-800">{appt.doctorName}</span>
-                          <span className="text-slate-500 font-medium">{apptDate}</span>
+                      <div className="space-y-1">
+                        <div className="flex items-baseline gap-2.5">
+                          <h3
+                            className={`text-xl font-bold ${
+                              isTaken ? "line-through text-slate-400" : "text-slate-900"
+                            }`}
+                          >
+                            {med.name}
+                          </h3>
+                          <span className="text-sm font-semibold text-slate-500">
+                            {med.dosage}
+                          </span>
                         </div>
-                        <p className="text-slate-600">{appt.specialty}</p>
-                        <div className="flex items-center gap-1 text-slate-500 text-[11px]">
-                          <MapPin className="w-3 h-3" />
-                          <span>{appt.location}</span>
+
+                        <p className="text-sm text-slate-600 leading-relaxed">
+                          {med.instructions}
+                        </p>
+
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 pt-0.5">
+                          <Clock className="w-4 h-4 text-slate-400" />
+                          <span>Scheduled for {med.timeOfDay}</span>
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+
+                    <div className="flex items-center justify-end shrink-0 sm:self-center">
+                      {isTaken ? (
+                        <span className="text-sm font-bold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-5 py-2.5 rounded-xl flex items-center gap-2">
+                          <Check className="w-4 h-4 stroke-[3]" />
+                          <span>Taken</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => markDoseAsTaken(med.id, med.name)}
+                          className="text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 px-6 py-3 rounded-xl transition-all shadow-xs cursor-pointer"
+                        >
+                          {isSubmitting ? "Saving..." : "Take Medicine"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Helpful Notes */}
-            {senior.memories && senior.memories.length > 0 && (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3">
-                <div className="flex items-center gap-2 text-slate-900 font-semibold text-sm border-b border-slate-200 pb-2">
-                  <Heart className="w-4 h-4 text-rose-500" />
-                  <span>Care Notes</span>
-                </div>
-
-                <ul className="space-y-2 text-xs text-slate-600">
-                  {senior.memories.slice(0, 3).map((mem) => (
-                    <li key={mem.id} className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-1.5 shrink-0" />
-                      <span>{mem.keyFact}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-          </aside>
-        </div>
+              );
+            })}
+          </div>
+        </section>
       </main>
 
-      {/* Professional Footer */}
-      <footer className="border-t border-slate-200 mt-16 py-8 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <p>© {new Date().getFullYear()} GrandPal Health Systems. All rights reserved.</p>
-          <div className="flex items-center gap-6">
-            <button
-              type="button"
-              onClick={() => setShowPinModal(true)}
-              className="hover:text-slate-700 cursor-pointer"
-            >
-              Caregiver Portal
-            </button>
-            <span className="hover:text-slate-700 cursor-pointer">Privacy Policy</span>
-            <span className="hover:text-slate-700 cursor-pointer">Terms of Service</span>
-            <span className="hover:text-slate-700 cursor-pointer">Help and Support</span>
-          </div>
-        </div>
+      {/* Clean, Peaceful Footer */}
+      <footer className="border-t border-slate-200 mt-16 py-8 bg-white text-center text-xs text-slate-400">
+        <p>GrandPal • Made with care for your health and peace of mind.</p>
       </footer>
 
+      {/* Caregiver PIN Gate */}
       <CaregiverPinModal
         isOpen={showPinModal}
         onClose={() => setShowPinModal(false)}
       />
 
-      <HealthCheckupModal
-        isOpen={showCheckupModal}
-        onClose={() => setShowCheckupModal(false)}
+      {/* Doctor Pup Phone Call Modal */}
+      <DoctorPupPhoneCall
+        isOpen={showPhoneCall}
+        onClose={() => setShowPhoneCall(false)}
         seniorName={senior.name}
-        onFactAdded={loadData}
+        seniorId={senior.id}
+        onDoseLogged={loadData}
       />
     </div>
   );

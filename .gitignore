@@ -30,8 +30,21 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files (NEVER commit secrets or API keys)
+.env
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# temporary audio/media files
+*.mp3
+*.wav
+*.webm
+
+# SQLite temp journal
+*.db-journal
 
 # vercel
 .vercel

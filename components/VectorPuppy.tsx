@@ -8,12 +8,14 @@ interface VectorPuppyProps {
   state?: PuppyState;
   className?: string;
   isCelebrating?: boolean;
+  isSpeaking?: boolean;
 }
 
 export function VectorPuppy({
   state = "idle",
   className = "w-40 h-40",
   isCelebrating = false,
+  isSpeaking = false,
 }: VectorPuppyProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -148,6 +150,22 @@ export function VectorPuppy({
               transform-origin: 704px 220px;
               animation: earRightWiggle 3.5s ease-in-out infinite;
             }
+            @keyframes mouthSpeak {
+              0%, 100% { transform: translateY(0) scaleY(1); }
+              50% { transform: translateY(3px) scaleY(1.08); }
+            }
+            .anim-speak {
+              transform-origin: 512px 646px;
+              animation: mouthSpeak 0.22s ease-in-out infinite;
+            }
+            @keyframes mouthOpenTalk {
+              0%, 100% { transform: scaleY(0.82) scaleX(0.94); }
+              50% { transform: scaleY(1.22) scaleX(1.06); }
+            }
+            .anim-open-mouth {
+              transform-origin: 512px 656px;
+              animation: mouthOpenTalk 0.22s ease-in-out infinite;
+            }
           `}</style>
 
           {/* Warm Fur Gradients Matching Reference */}
@@ -259,8 +277,28 @@ export function VectorPuppy({
               strokeLinecap="round"
             />
 
+            {/* Open Speaking Mouth with Pink Tongue (Only visible when speaking) */}
+            {isSpeaking && (
+              <g className="anim-open-mouth">
+                {/* Deep Red Mouth Cavity */}
+                <path
+                  d="M 456 654 C 456 654 466 716 512 716 C 558 716 568 654 568 654 C 542 664 482 664 456 654 Z"
+                  fill="#D63031"
+                  stroke="#3A281E"
+                  strokeWidth="7"
+                  strokeLinejoin="round"
+                />
+                {/* Sweet Little Pink Tongue */}
+                <path
+                  d="M 482 690 C 492 676 532 676 542 690 C 536 712 488 712 482 690 Z"
+                  fill="#FFA3B5"
+                />
+              </g>
+            )}
+
             {/* Kawaii W-Shaped Mouth (Thick, perfectly rounded) */}
             <path
+              className={isSpeaking ? "anim-speak" : ""}
               d="M 416 630 C 416 662 448 676 478 672 C 500 669 512 648 512 646 C 512 648 524 669 546 672 C 576 676 608 662 608 630"
               fill="none"
               stroke="#3A281E"
