@@ -1,20 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import confetti from "canvas-confetti";
 import { BarnabyMascot } from "@/components/BarnabyMascot";
 import { useWebSpeech } from "@/lib/useWebSpeech";
-import {
-  Volume2,
-  Mic,
-  MicOff,
-  Sparkles,
-  Sun,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
-  HeartHandshake,
-} from "lucide-react";
+import { Volume2, Clock, Check, Shield } from "lucide-react";
 
 interface Medication {
   id: string;
@@ -44,264 +34,225 @@ interface SeniorData {
 export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void }) {
   const [senior, setSenior] = useState<SeniorData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mascotState, setMascotState] = useState<"idle" | "talking" | "listening" | "celebrating">("idle");
-  const [activeSpeechText, setActiveSpeechText] = useState("Tap anywhere or say 'Hello Barnaby' to start!");
+  const [mascotState, setMascotState] = useState<"idle" | "listening" | "talking" | "celebrating">("idle");
+  const [systemMessage, setSystemMessage] = useState("Listening for your voice...");
   const [lastTranscript, setLastTranscript] = useState("");
   const [takenMeds, setTakenMeds] = useState<Set<string>>(new Set());
 
-  const { speak, startListening, stopListening, isSpeaking, isListening } = useWebSpeech();
-  const hasSpokenGreeting = useRef(false);
+  const {
+    speak,
+    startContinuousListening,
+    pauseListening,
+    resumeListening,
+    isSpeaking,
+    isListening,
+  } = useWebSpeech();
 
-  useEffect(() => {
-    fetch("/api/senior")
-      .then((res) => res.json())
-      .then((data) => {
-        setSenior(data);
-        const alreadyTaken = new Set<string>();
-        data.doseLogs?.forEach((log: DoseLog) => {
-          if (log.status === "TAKEN") alreadyTaken.add(log.medicationId);
-        });
-        setTakenMeds(alreadyTaken);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error loading senior data:", err);
-        setLoading(false);
-      });
-  }, []);
+  const isProcessingRef = useRef(false);
+  const initializedSpeechRef = useRef(false);
 
-  const greetSenior = () => {
-    if (!senior) return;
-    const pendingMed = senior.medications.find((m) => !takenMeds.has(m.id));
-    let text = `Hello ${senior.name}! I am Barnaby. You have a ${senior.streakDays} day sunshine streak! `;
-    if (pendingMed) {
-      text += `It is time for your ${pendingMed.name} ${pendingMed.dosage}. ${pendingMed.instructions}. Say 'I took it' once you swallow it!`;
-    } else {
-      text += "All your scheduled medicines for right now have been taken. You are doing wonderful!";
-    }
-    setActiveSpeechText(text);
-    setMascotState("talking");
-    speak(text, {
-      onEnd: () => {
-        setMascotState("idle");
-        listenForConfirmation();
-      },
-    });
-  };
-
-  const listenForConfirmation = () => {
-    setMascotState("listening");
-    startListening(
-      (transcript) => {
-        setLastTranscript(transcript);
-        const lower = transcript.toLowerCase();
-        if (
-          lower.includes("took") ||
-          lower.includes("done") ||
-          lower.includes("yes") ||
-          lower.includes("swallowed") ||
-          lower.includes("taken")
-        ) {
-          const pendingMed = senior?.medications.find((m) => !takenMeds.has(m.id));
-          if (pendingMed) {
-            handleTakeMed(pendingMed.id, pendingMed.name, `Confirmed via voice: "${transcript}"`);
-          }
-        } else if (lower.includes("hello") || lower.includes("barnaby")) {
-          greetSenior();
-        } else {
-          speak(`I heard: "${transcript}". If you took your pill, tap the big green button or say 'I took it'!`);
-        }
-      },
-      () => setMascotState("idle")
-    );
-  };
-
-  const handleTakeMed = async (medId: string, medName: string, note?: string) => {
-    if (!senior) return;
-
+  const fetchProfile = useCallback(async () => {
     try {
-      setMascotState("celebrating");
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ["#F59E0B", "#10B981", "#3B82F6", "#EC4899"],
+      const res = await fetch("/api/senior");
+      const data = await res.json();
+      setSenior(data);
+
+      const taken = new Set<string>();
+      data.doseLogs?.forEach((log: DoseLog) => {
+        if (log.status === "TAKEN") taken.add(log.medicationId);
       });
-
-      const res = await fetch("/api/doses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          seniorId: senior.id,
-          medicationId: medId,
-          note: note ?? "Confirmed on Senior Portal",
-        }),
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        setTakenMeds((prev) => new Set(prev).add(medId));
-        setSenior((prev) => (prev ? { ...prev, streakDays: result.streakDays } : null));
-
-        const praise = `Wonderful job, ${senior.name}! You took your ${medName}. Barnaby has added a golden sunflower to your streak!`;
-        setActiveSpeechText(praise);
-        speak(praise, {
-          onEnd: () => setMascotState("idle"),
-        });
-      }
+      setTakenMeds(taken);
+      setLoading(false);
+      return data;
     } catch (e) {
       console.error(e);
-      setMascotState("idle");
+      setLoading(false);
+      return null;
     }
-  };
+  }, []);
+
+  const handleVoiceInput = useCallback(
+    async (transcript: string) => {
+      if (isProcessingRef.current || !senior) return;
+      isProcessingRef.current = true;
+      setLastTranscript(transcript);
+      pauseListening();
+
+      try {
+        const res = await fetch("/api/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speech: transcript, seniorId: senior.id }),
+        });
+
+        const data = await res.json();
+        const reply = data.response;
+
+        if (data.action === "DOSE_LOGGED") {
+          setMascotState("celebrating");
+          confetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.6 },
+          });
+          fetchProfile();
+        } else {
+          setMascotState("talking");
+        }
+
+        setSystemMessage(reply);
+
+        speak(reply, {
+          onEnd: () => {
+            setMascotState("listening");
+            isProcessingRef.current = false;
+            resumeListening();
+          },
+        });
+      } catch (err) {
+        console.error(err);
+        isProcessingRef.current = false;
+        resumeListening();
+      }
+    },
+    [senior, pauseListening, resumeListening, speak, fetchProfile]
+  );
+
+  useEffect(() => {
+    fetchProfile().then((data) => {
+      if (!initializedSpeechRef.current && data) {
+        initializedSpeechRef.current = true;
+        const pending = data.medications.find(
+          (m: Medication) => !data.doseLogs?.some((l: DoseLog) => l.medicationId === m.id && l.status === "TAKEN")
+        );
+
+        let welcome = `Hello ${data.name}. `;
+        if (pending) {
+          welcome += `It is time for your ${pending.name} ${pending.dosage}. Simply say "I took it" when you have taken it.`;
+        } else {
+          welcome += `All scheduled medications are up to date. I am listening if you need anything.`;
+        }
+
+        setSystemMessage(welcome);
+        setMascotState("talking");
+        speak(welcome, {
+          onEnd: () => {
+            setMascotState("listening");
+            startContinuousListening((transcript) => {
+              handleVoiceInput(transcript);
+            });
+          },
+        });
+      }
+    });
+  }, [fetchProfile, speak, startContinuousListening, handleVoiceInput]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-amber-50 flex flex-col items-center justify-center p-6 text-center">
-        <BarnabyMascot state="talking" className="w-32 h-32 animate-pulse" />
-        <p className="mt-4 text-2xl font-bold text-amber-900">Barnaby is waking up...</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <p className="text-sm font-medium text-slate-500">Connecting audio and profile...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-amber-100/60 p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto select-none">
-      <header className="flex items-center justify-between bg-white/80 backdrop-blur-md rounded-3xl p-4 sm:p-6 shadow-sm border border-amber-200">
-        <div className="flex items-center space-x-3 sm:space-x-4">
-          <div className="bg-amber-100 p-3 rounded-2xl">
-            <Sun className="w-8 h-8 sm:w-10 sm:h-10 text-amber-600 animate-spin-slow" />
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-800">
-              Good Day, {senior?.name}!
-            </h1>
-            <p className="text-base sm:text-lg text-slate-600 font-medium">GrandPal Companion</p>
-          </div>
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6 max-w-4xl mx-auto flex flex-col justify-between">
+      {/* Header bar */}
+      <header className="flex items-center justify-between pb-4 border-b border-slate-200">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">{senior?.name}</h1>
+          <p className="text-xs text-slate-500">Autonomous Voice Companion</p>
         </div>
 
-        <div className="flex items-center space-x-2 sm:space-x-4">
-          <div className="flex items-center bg-amber-500 text-white px-4 py-2 sm:px-5 sm:py-3 rounded-2xl font-black text-lg sm:text-xl shadow-md space-x-2">
-            <span>🌻</span>
-            <span>{senior?.streakDays} Days</span>
+        <div className="flex items-center space-x-3">
+          <div className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+            Streak: {senior?.streakDays} Days
           </div>
 
           <button
             onClick={onSwitchRole}
-            className="flex items-center space-x-1.5 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-2 sm:px-4 sm:py-3 rounded-2xl font-semibold text-sm transition"
-            title="Open Caregiver Dashboard"
+            className="flex items-center space-x-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1 rounded-md transition"
           >
-            <ShieldCheck className="w-5 h-5 text-indigo-600" />
-            <span className="hidden sm:inline">Caregiver</span>
+            <Shield className="w-3.5 h-3.5" />
+            <span>Caregiver</span>
           </button>
         </div>
       </header>
 
-      <section className="my-6 sm:my-8 bg-white/95 rounded-3xl p-6 sm:p-8 shadow-md border-2 border-amber-300 flex flex-col md:flex-row items-center gap-6">
-        <div
-          onClick={greetSenior}
-          className="cursor-pointer group relative flex flex-col items-center"
-          title="Tap Barnaby to talk!"
-        >
-          <BarnabyMascot state={mascotState} className="w-44 h-44 sm:w-52 sm:h-52 drop-shadow-md" />
-          <span className="mt-2 text-xs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 px-3 py-1 rounded-full group-hover:bg-amber-200 transition">
-            Tap Me 🦉
-          </span>
-        </div>
-
-        <div className="flex-1 flex flex-col justify-center space-y-4 text-center md:text-left">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 relative">
-            <p className="text-xl sm:text-2xl font-bold text-slate-800 leading-snug">
-              &ldquo;{activeSpeechText}&rdquo;
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
-            <button
-              onClick={greetSenior}
-              disabled={isSpeaking}
-              className="flex items-center space-x-2 bg-amber-500 hover:bg-amber-600 text-white text-lg font-bold px-6 py-3.5 rounded-2xl shadow-md transition active:scale-95 disabled:opacity-50"
-            >
-              <Volume2 className="w-6 h-6" />
-              <span>Read Aloud</span>
-            </button>
-
-            <button
-              onClick={isListening ? stopListening : listenForConfirmation}
-              className={`flex items-center space-x-2 text-lg font-bold px-6 py-3.5 rounded-2xl shadow-md transition active:scale-95 ${
+      {/* Voice Status & Mascot Panel */}
+      <section className="my-8 flex flex-col items-center text-center">
+        <div className="relative mb-3">
+          <BarnabyMascot state={mascotState} className="w-28 h-28" />
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+            <span
+              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wide uppercase border ${
                 isListening
-                  ? "bg-rose-500 text-white animate-pulse"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : isSpeaking
+                  ? "bg-sky-50 text-sky-700 border-sky-200"
+                  : "bg-slate-100 text-slate-600 border-slate-200"
               }`}
             >
-              {isListening ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
-              <span>{isListening ? "Listening..." : "Speak to Barnaby"}</span>
-            </button>
+              {isSpeaking ? "Speaking" : isListening ? "Listening" : "Active"}
+            </span>
           </div>
+        </div>
 
+        {/* Ambient Speech bubble */}
+        <div className="w-full max-w-lg mt-2 p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs text-left">
+          <div className="flex items-start space-x-2">
+            <Volume2 className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+            <p className="text-sm font-medium text-slate-700 leading-relaxed">{systemMessage}</p>
+          </div>
           {lastTranscript && (
-            <p className="text-sm font-medium text-slate-500 italic">
+            <p className="mt-2 text-xs text-slate-400 pl-6 border-t border-slate-100 pt-1.5">
               Heard: &ldquo;{lastTranscript}&rdquo;
             </p>
           )}
         </div>
       </section>
 
-      <main className="space-y-4 mb-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-extrabold text-slate-800 flex items-center gap-2">
-            <span>Today&rsquo;s Medication Routine</span>
-            <Sparkles className="w-6 h-6 text-amber-500" />
-          </h2>
-        </div>
+      {/* Routine list */}
+      <main className="space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Today&apos;s Medication Schedule
+        </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        <div className="space-y-2">
           {senior?.medications.map((med) => {
             const isDone = takenMeds.has(med.id);
 
             return (
               <div
                 key={med.id}
-                className={`rounded-3xl p-6 border-2 transition-all flex flex-col justify-between ${
+                className={`p-3 rounded-lg border text-xs flex items-center justify-between transition ${
                   isDone
-                    ? "bg-emerald-50/80 border-emerald-300 opacity-90"
-                    : "bg-white border-amber-200 shadow-md hover:border-amber-400"
+                    ? "bg-slate-100/60 border-slate-200 text-slate-400"
+                    : "bg-white border-slate-200 text-slate-800 shadow-xs"
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-black px-3 py-1 rounded-full bg-slate-100 text-slate-700 flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-slate-500" />
-                      {med.timeOfDay}
-                    </span>
-                    {isDone ? (
-                      <span className="text-emerald-700 font-extrabold text-sm flex items-center gap-1 bg-emerald-100 px-3 py-1 rounded-full">
-                        <CheckCircle2 className="w-4 h-4" /> Taken
-                      </span>
-                    ) : (
-                      <span className="text-amber-800 font-bold text-sm bg-amber-100 px-3 py-1 rounded-full">
-                        Scheduled
-                      </span>
-                    )}
+                <div className="flex items-center space-x-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+                    <Clock className="w-3.5 h-3.5" />
                   </div>
-
-                  <h3 className="text-2xl sm:text-3xl font-black text-slate-800">{med.name}</h3>
-                  <p className="text-lg font-bold text-amber-700 mt-1">{med.dosage}</p>
-                  <p className="text-base text-slate-600 mt-2 font-medium">{med.instructions}</p>
+                  <div>
+                    <span className="font-semibold text-slate-900 mr-2">{med.name}</span>
+                    <span className="text-slate-500 mr-3">({med.dosage})</span>
+                    <span className="text-slate-400">{med.instructions}</span>
+                  </div>
                 </div>
 
-                <div className="mt-6">
+                <div className="flex items-center space-x-3">
+                  <span className="text-slate-500 font-mono">{med.timeOfDay}</span>
                   {isDone ? (
-                    <div className="w-full py-4 text-center text-emerald-800 font-bold text-lg bg-emerald-100/60 rounded-2xl">
-                      ✓ Completed for Today
-                    </div>
+                    <span className="flex items-center space-x-1 font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      <Check className="w-3 h-3" />
+                      <span>Taken</span>
+                    </span>
                   ) : (
-                    <button
-                      onClick={() => handleTakeMed(med.id, med.name)}
-                      className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-black text-xl rounded-2xl shadow-lg transition flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-7 h-7" />
-                      <span>I TOOK IT!</span>
-                    </button>
+                    <span className="font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      Pending
+                    </span>
                   )}
                 </div>
               </div>
@@ -310,9 +261,9 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
         </div>
       </main>
 
-      <footer className="bg-white/80 border border-amber-200 rounded-3xl p-4 text-center text-sm font-medium text-slate-500 flex items-center justify-center gap-2">
-        <HeartHandshake className="w-4 h-4 text-rose-500" />
-        <span>GrandPal Voice & Care Companion • Built for Catalyst 2k26</span>
+      {/* Footer */}
+      <footer className="mt-8 pt-4 border-t border-slate-200 text-center text-xs text-slate-400">
+        GrandPal Continuous Ambient Voice System • Speak naturally to interact
       </footer>
     </div>
   );

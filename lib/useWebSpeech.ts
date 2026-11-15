@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 interface SpeechOptions {
-  onTranscript?: (text: string) => void;
   onEnd?: () => void;
   rate?: number;
   pitch?: number;
@@ -14,90 +13,117 @@ export function useWebSpeech() {
   const [isListening, setIsListening] = useState(false);
   const [supported, setSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const isContinuousRef = useRef(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const hasSpeech = "speechSynthesis" in window;
-      setSupported(hasSpeech);
+      setSupported("speechSynthesis" in window);
 
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        recognition.continuous = true;
         recognition.interimResults = false;
         recognition.lang = "en-US";
         recognitionRef.current = recognition;
       }
     }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {}
+      }
+    };
   }, []);
 
-  const speak = useCallback(
-    (text: string, options?: SpeechOptions) => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const speak = useCallback((text: string, options?: SpeechOptions) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      options?.onEnd?.();
+      return;
+    }
 
-      window.speechSynthesis.cancel();
+    window.speechSynthesis.cancel();
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = options?.rate ?? 0.85; // Slightly slower pace for seniors
-      utterance.pitch = options?.pitch ?? 1.05; // Gentle, warm pitch
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = options?.rate ?? 0.9;
+    utterance.pitch = options?.pitch ?? 1.0;
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        options?.onEnd?.();
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      options?.onEnd?.();
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      options?.onEnd?.();
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const startContinuousListening = useCallback(
+    (onTranscript: (text: string) => void) => {
+      if (!recognitionRef.current) return;
+
+      isContinuousRef.current = true;
+
+      recognitionRef.current.onresult = (event: any) => {
+        const resultsLength = event.results.length;
+        const latestResult = event.results[resultsLength - 1];
+        if (latestResult.isFinal) {
+          const transcript = latestResult[0].transcript.trim();
+          if (transcript.length > 0) {
+            onTranscript(transcript);
+          }
+        }
       };
-      utterance.onerror = () => setIsSpeaking(false);
 
-      window.speechSynthesis.speak(utterance);
-    },
-    []
-  );
-
-  const startListening = useCallback(
-    (onResult: (transcript: string) => void, onComplete?: () => void) => {
-      if (!recognitionRef.current) {
-        console.warn("Speech Recognition not supported in this browser.");
-        onComplete?.();
-        return;
-      }
+      recognitionRef.current.onstart = () => setIsListening(true);
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+        // Automatically restart if continuous listening is desired and not speaking
+        if (isContinuousRef.current) {
+          try {
+            recognitionRef.current.start();
+          } catch {}
+        }
+      };
+      recognitionRef.current.onerror = () => {
+        setIsListening(false);
+      };
 
       try {
-        recognitionRef.current.onstart = () => setIsListening(true);
-        recognitionRef.current.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          onResult(transcript);
-        };
-        recognitionRef.current.onend = () => {
-          setIsListening(false);
-          onComplete?.();
-        };
-        recognitionRef.current.onerror = (e: any) => {
-          console.warn("Speech recognition error:", e);
-          setIsListening(false);
-          onComplete?.();
-        };
-
         recognitionRef.current.start();
-      } catch (err) {
-        setIsListening(false);
-      }
+      } catch {}
     },
     []
   );
 
-  const stopListening = useCallback(() => {
-    if (recognitionRef.current && isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+  const pauseListening = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
     }
-  }, [isListening]);
+  }, []);
+
+  const resumeListening = useCallback(() => {
+    if (recognitionRef.current && isContinuousRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch {}
+    }
+  }, []);
 
   return {
     speak,
-    startListening,
-    stopListening,
+    startContinuousListening,
+    pauseListening,
+    resumeListening,
     isSpeaking,
     isListening,
     supported,
