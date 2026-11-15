@@ -3,12 +3,14 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PuppyMascot } from "@/components/PuppyMascot";
 import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import {
   Mic,
   MicOff,
   Phone,
   Volume2,
   VolumeX,
+  Loader2,
 } from "lucide-react";
 
 interface DoctorPupPhoneCallProps {
@@ -33,91 +35,26 @@ export function DoctorPupPhoneCall({
   const [isPupSpeaking, setIsPupSpeaking] = useState(false);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
-  const [isListeningUser, setIsListeningUser] = useState(false);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isMicMutedRef = useRef(isMicMuted);
+  const isSpeakerMutedRef = useRef(isSpeakerMuted);
 
-  // Initialize and clean up when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
-      stopVoice();
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {}
-      }
-      if (timerRef.current) clearInterval(timerRef.current);
-      setStatus("DIALING");
-      setCallDuration(0);
-      setIsPupSpeaking(false);
-      return;
-    }
+    isMicMutedRef.current = isMicMuted;
+  }, [isMicMuted]);
 
-    setStatus("DIALING");
-    setCallDuration(0);
-
-    // Simulate iPhone calling tone / pause for 2 seconds, then connect
-    const connectTimer = setTimeout(() => {
-      setStatus("CONNECTED");
-
-      // Doctor Pup greeting upon answering the phone
-      const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
-      speakPupResponse(initialGreeting);
-    }, 2000);
-
-    return () => {
-      clearTimeout(connectTimer);
-      stopVoice();
-    };
-  }, [isOpen, seniorName]);
-
-  // Call timer once connected
   useEffect(() => {
-    if (status === "CONNECTED") {
-      timerRef.current = setInterval(() => {
-        setCallDuration((prev) => prev + 1);
-      }, 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [status]);
+    isSpeakerMutedRef.current = isSpeakerMuted;
+  }, [isSpeakerMuted]);
 
-  // Play Doctor Pup's neural voice response (synchronized with audio start)
-  const speakPupResponse = useCallback(
-    async (text: string) => {
-      if (isSpeakerMuted) return;
-
-      setIsPupSpeaking(false);
-
-      await playNeuralVoice(text, {
-        onStart: () => {
-          setIsPupSpeaking(true);
-        },
-        onEnd: () => {
-          setIsPupSpeaking(false);
-          startListeningSenior();
-        },
-        onError: () => {
-          setIsPupSpeaking(false);
-          startListeningSenior();
-        },
-      });
-    },
-    [isSpeakerMuted]
-  );
-
-  // Process senior's speech with AI
+  // Handle transcribed senior input
   const handleSeniorInput = useCallback(
     async (spokenText: string) => {
       if (!spokenText.trim() || isProcessingAI) return;
 
       setIsProcessingAI(true);
-      stopListeningSenior();
 
       try {
         const res = await fetch("/api/voice", {
@@ -144,69 +81,127 @@ export function DoctorPupPhoneCall({
         setIsProcessingAI(false);
       }
     },
-    [isProcessingAI, seniorId, seniorName, onDoseLogged, speakPupResponse]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isProcessingAI, seniorId, seniorName, onDoseLogged]
   );
 
-  // Start listening to the senior
-  const startListeningSenior = useCallback(() => {
-    if (isMicMuted || typeof window === "undefined") return;
+  // Audio Recorder Hook using HTML5 MediaRecorder and Gemini/Python STT
+  const {
+    isRecording,
+    isTranscribing,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder((transcript) => {
+    if (transcript) {
+      handleSeniorInput(transcript);
+    }
+  });
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  // Play Doctor Pup's neural voice response (synchronized with mouth animation)
+  const speakPupResponse = useCallback(
+    async (text: string) => {
+      if (isSpeakerMutedRef.current) return;
 
-    if (!SpeechRecognition) return;
+      setIsPupSpeaking(false);
 
-    try {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
+      await playNeuralVoice(text, {
+        onStart: () => {
+          setIsPupSpeaking(true);
+        },
+        onEnd: () => {
+          setIsPupSpeaking(false);
+          // Auto-listen for senior's reply once Doctor Pup finishes speaking
+          if (!isMicMutedRef.current) {
+            startRecording().catch(() => {});
+          }
+        },
+        onError: () => {
+          setIsPupSpeaking(false);
+          if (!isMicMutedRef.current) {
+            startRecording().catch(() => {});
+          }
+        },
+      });
+    },
+    [startRecording]
+  );
+
+  // Initialize and clean up when modal opens/closes
+  useEffect(() => {
+    if (!isOpen) {
+      stopVoice();
+      cancelRecording();
+      if (timerRef.current) clearInterval(timerRef.current);
+      setStatus("DIALING");
+      setCallDuration(0);
+      setIsPupSpeaking(false);
+      return;
+    }
+
+    setStatus("DIALING");
+    setCallDuration(0);
+
+    // Simulate iPhone calling tone / pause for 1.8 seconds, then connect
+    const connectTimer = setTimeout(() => {
+      setStatus("CONNECTED");
+
+      // Doctor Pup greeting upon answering the phone
+      const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
+      speakPupResponse(initialGreeting);
+    }, 1800);
+
+    return () => {
+      clearTimeout(connectTimer);
+      stopVoice();
+      cancelRecording();
+    };
+  }, [isOpen, seniorName, speakPupResponse, cancelRecording]);
+
+  // Call timer once connected
+  useEffect(() => {
+    if (status === "CONNECTED") {
+      timerRef.current = setInterval(() => {
+        setCallDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [status]);
+
+  const handleToggleMic = async () => {
+    if (isMicMuted) {
+      setIsMicMuted(false);
+      if (!isPupSpeaking && !isProcessingAI && !isTranscribing) {
+        await startRecording();
       }
-
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-US";
-
-      rec.onstart = () => {
-        setIsListeningUser(true);
-      };
-
-      rec.onresult = (event: any) => {
-        const resultText = event.results[0][0].transcript;
-        handleSeniorInput(resultText);
-      };
-
-      rec.onerror = (e: any) => {
-        console.warn("Speech recognition error:", e.error);
-        setIsListeningUser(false);
-      };
-
-      rec.onend = () => {
-        setIsListeningUser(false);
-      };
-
-      recognitionRef.current = rec;
-      rec.start();
-    } catch (e) {
-      console.warn("Recognition start failed:", e);
+      return;
     }
-  }, [isMicMuted, handleSeniorInput]);
 
-  const stopListeningSenior = useCallback(() => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-      setIsListeningUser(false);
+    if (isRecording) {
+      // User tapped mic button to finish speaking
+      const transcript = await stopRecording();
+      if (transcript) {
+        handleSeniorInput(transcript);
+      }
+    } else {
+      // Start listening
+      if (!isPupSpeaking && !isProcessingAI && !isTranscribing) {
+        await startRecording();
+      }
     }
-  }, []);
+  };
 
   const handleEndCall = () => {
     stopVoice();
-    stopListeningSenior();
+    cancelRecording();
     setStatus("ENDED");
     setTimeout(() => {
       onClose();
-    }, 350);
+    }, 300);
   };
 
   if (!isOpen) return null;
@@ -225,7 +220,7 @@ export function DoctorPupPhoneCall({
         {/* iPhone Dynamic Island */}
         <div className="w-full pt-1.5 pb-1 flex justify-center items-center z-10">
           <div className="w-20 h-4.5 bg-black rounded-full flex items-center justify-center gap-1.5 px-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <div className={`w-1.5 h-1.5 rounded-full ${isRecording ? "bg-red-500 animate-pulse" : "bg-emerald-500 animate-pulse"}`} />
             <div className="w-1 h-1 rounded-full bg-slate-800" />
           </div>
         </div>
@@ -234,11 +229,25 @@ export function DoctorPupPhoneCall({
         <div className="text-center pt-2 space-y-0.5 z-10">
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">Doctor Pup</h2>
           
-          <div className="text-xs font-medium text-slate-500">
+          <div className="text-xs font-medium text-slate-500 h-5 flex items-center justify-center">
             {status === "DIALING" ? (
               <span className="animate-pulse">calling...</span>
             ) : status === "CONNECTED" ? (
-              <span className="font-mono text-slate-600">{formatTimer(callDuration)}</span>
+              isPupSpeaking ? (
+                <span className="text-emerald-600 font-medium animate-pulse">Doctor Pup speaking...</span>
+              ) : isTranscribing ? (
+                <span className="text-indigo-600 font-medium flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Transcribing...
+                </span>
+              ) : isProcessingAI ? (
+                <span className="text-indigo-600 font-medium animate-pulse">Doctor Pup thinking...</span>
+              ) : isRecording ? (
+                <span className="text-blue-600 font-medium animate-pulse">Listening... (Tap mic when done)</span>
+              ) : isMicMuted ? (
+                <span className="text-rose-500">Mic muted</span>
+              ) : (
+                <span className="font-mono text-slate-600">{formatTimer(callDuration)}</span>
+              )
             ) : (
               <span className="text-rose-600">Call Ended</span>
             )}
@@ -260,8 +269,8 @@ export function DoctorPupPhoneCall({
             {isPupSpeaking && (
               <div className="absolute w-36 h-36 rounded-full bg-emerald-100/60 animate-pulse" />
             )}
-            {isListeningUser && (
-              <div className="absolute w-36 h-36 rounded-full bg-blue-100/60 animate-ping" />
+            {isRecording && (
+              <div className="absolute w-36 h-36 rounded-full bg-blue-100/70 animate-ping" />
             )}
 
             {/* Circular Avatar */}
@@ -272,8 +281,10 @@ export function DoctorPupPhoneCall({
                     ? "thinking"
                     : isPupSpeaking
                     ? "listening"
-                    : isProcessingAI
+                    : isProcessingAI || isTranscribing
                     ? "thinking"
+                    : isRecording
+                    ? "listening"
                     : "idle"
                 }
                 isSpeaking={isPupSpeaking}
@@ -287,28 +298,36 @@ export function DoctorPupPhoneCall({
         <div className="space-y-4 pb-2 z-10">
           {/* Action Button Row */}
           <div className="flex items-center justify-around px-2">
-            {/* Mute Mic */}
+            {/* Microphone Button (Tap to finish speaking or toggle) */}
             <button
               type="button"
-              onClick={() => {
-                const next = !isMicMuted;
-                setIsMicMuted(next);
-                if (next) stopListeningSenior();
-                else startListeningSenior();
-              }}
-              className="flex flex-col items-center gap-1 cursor-pointer"
+              onClick={handleToggleMic}
+              disabled={status !== "CONNECTED" || isPupSpeaking || isProcessingAI}
+              className={`flex flex-col items-center gap-1 cursor-pointer transition-opacity ${
+                status !== "CONNECTED" || isPupSpeaking || isProcessingAI
+                  ? "opacity-50 cursor-not-allowed"
+                  : ""
+              }`}
             >
               <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
-                  isMicMuted
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                  isRecording
+                    ? "bg-blue-600 text-white shadow-lg ring-4 ring-blue-200 scale-105 animate-pulse"
+                    : isMicMuted
                     ? "bg-rose-100 text-rose-600 border border-rose-200"
                     : "bg-slate-100 hover:bg-slate-200 text-slate-700"
                 }`}
               >
-                {isMicMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                {isRecording ? (
+                  <Mic className="w-5 h-5 text-white" />
+                ) : isMicMuted ? (
+                  <MicOff className="w-5 h-5" />
+                ) : (
+                  <Mic className="w-5 h-5" />
+                )}
               </div>
               <span className="text-[10px] font-medium text-slate-500">
-                {isMicMuted ? "muted" : "mute"}
+                {isRecording ? "finish" : isMicMuted ? "unmute" : "speak"}
               </span>
             </button>
 

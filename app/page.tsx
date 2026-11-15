@@ -6,7 +6,7 @@ import { PuppyMascot } from "@/components/PuppyMascot";
 import { VectorPuppy } from "@/components/VectorPuppy";
 import { CaregiverPinModal } from "@/components/CaregiverPinModal";
 import { DoctorPupPhoneCall } from "@/components/DoctorPupPhoneCall";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import {
   Check,
@@ -144,18 +144,24 @@ export default function Home() {
     [senior, loadData]
   );
 
-  const { isListening, transcript, startListening, stopListening } =
-    useSpeechRecognition((text) => handleVoiceInput(text));
+  const {
+    isRecording,
+    isTranscribing,
+    startRecording,
+    stopRecording,
+  } = useAudioRecorder((text) => handleVoiceInput(text));
 
   const toggleMicrophone = async () => {
-    if (isListening) {
-      const captured = stopListening();
+    if (isRecording) {
+      const captured = await stopRecording();
       if (captured) {
         handleVoiceInput(captured);
+      } else {
+        toast.info("No speech detected. Click Talk to Doctor Pup to try again.");
       }
     } else {
       stopVoice();
-      await startListening();
+      await startRecording();
     }
   };
 
@@ -264,11 +270,11 @@ export default function Home() {
           <div className="shrink-0">
             <PuppyMascot
               state={
-                submittingId || isPupThinking
+                submittingId || isPupThinking || isTranscribing
                   ? "thinking"
                   : isCelebrating
                   ? "celebrating"
-                  : isListening || isPupSpeaking
+                  : isRecording || isPupSpeaking
                   ? "listening"
                   : "idle"
               }
@@ -310,39 +316,55 @@ export default function Home() {
               <button
                 type="button"
                 onClick={toggleMicrophone}
-                className={`flex items-center gap-2.5 text-sm font-bold px-5 py-3 rounded-2xl shadow-xs transition-all cursor-pointer active:scale-95 ${
-                  isListening
+                disabled={isTranscribing || isPupThinking}
+                className={`flex items-center gap-2.5 text-sm font-bold px-5 py-3 rounded-2xl shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                  isRecording
                     ? "bg-rose-600 hover:bg-rose-700 text-white animate-pulse"
+                    : isTranscribing
+                    ? "bg-amber-600 text-white animate-pulse"
                     : "bg-blue-600 hover:bg-blue-700 text-white"
                 }`}
                 title={
-                  isListening
-                    ? "Listening... Click to finish speaking"
+                  isRecording
+                    ? "Recording... Click to send to Doctor Pup"
                     : "Click to speak to Doctor Pup"
                 }
               >
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                    isListening ? "bg-rose-700/60" : "bg-blue-700/60"
+                    isRecording
+                      ? "bg-rose-700/60"
+                      : isTranscribing
+                      ? "bg-amber-700/60"
+                      : "bg-blue-700/60"
                   }`}
                 >
-                  {isListening ? (
+                  {isRecording ? (
                     <Square className="w-3.5 h-3.5 fill-white" />
                   ) : (
                     <Mic className="w-4 h-4 text-white" />
                   )}
                 </div>
-                <span>{isListening ? "Stop & Send" : "Talk to Doctor Pup"}</span>
+                <span>
+                  {isRecording
+                    ? "Stop & Send"
+                    : isTranscribing
+                    ? "Understanding..."
+                    : "Talk to Doctor Pup"}
+                </span>
               </button>
             </div>
 
             {/* Live listening caption or text fallback */}
-            {isListening ? (
+            {isRecording ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-rose-600 pt-1">
                 <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
-                <span>
-                  {transcript ? `"${transcript}"` : "Listening to you... Speak now, then click Stop & Send"}
-                </span>
+                <span>Recording your voice... Speak now, then tap Stop & Send</span>
+              </div>
+            ) : isTranscribing ? (
+              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-amber-600 pt-1">
+                <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
+                <span>Doctor Pup is listening to your words...</span>
               </div>
             ) : (
               <form
