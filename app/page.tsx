@@ -5,11 +5,13 @@ import Image from "next/image";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
+import { CaregiverPinModal } from "@/components/CaregiverPinModal";
 import {
   Calendar,
   Check,
   Clock,
   Heart,
+  Lock,
   Mail,
   MapPin,
   Pill,
@@ -62,6 +64,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [dateString, setDateString] = useState("");
+  const [showPinModal, setShowPinModal] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -174,13 +177,24 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="text-right">
-            <span className="text-xs font-medium text-slate-500 block">
-              {dateString}
-            </span>
-            <span className="text-xs font-semibold text-slate-700 block">
-              {senior.name}
-            </span>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="text-right">
+              <span className="text-xs font-medium text-slate-500 block">
+                {dateString}
+              </span>
+              <span className="text-xs font-semibold text-slate-700 block">
+                {senior.name}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPinModal(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <Lock className="w-3.5 h-3.5 text-slate-500" />
+              <span>Caregiver</span>
+            </button>
           </div>
         </div>
       </header>
@@ -403,12 +417,24 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
           <p>© {new Date().getFullYear()} GrandPal Health Systems. All rights reserved.</p>
           <div className="flex items-center gap-6">
+            <button
+              type="button"
+              onClick={() => setShowPinModal(true)}
+              className="hover:text-slate-700 cursor-pointer"
+            >
+              Caregiver Portal
+            </button>
             <span className="hover:text-slate-700 cursor-pointer">Privacy Policy</span>
             <span className="hover:text-slate-700 cursor-pointer">Terms of Service</span>
             <span className="hover:text-slate-700 cursor-pointer">Help and Support</span>
           </div>
         </div>
       </footer>
+
+      <CaregiverPinModal
+        isOpen={showPinModal}
+        onClose={() => setShowPinModal(false)}
+      />
     </div>
   );
 }
