@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getGeminiClient, generateWithFallback } from "@/lib/gemini";
+import {
+  sanitizeUserInput,
+  wrapUntrustedInput,
+  PROMPT_INJECTION_DEFENSE_PROMPT,
+} from "@/lib/promptGuard";
 
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +66,14 @@ export async function POST(req: NextRequest) {
     const pendingSummary = pendingMeds.map((m) => `${m.name} (scheduled for ${m.timeOfDay})`).join(", ") || "None (all taken today)";
     const memoriesSummary = senior.memories.map((m) => m.keyFact).join("; ");
 
+    const cleanSpeech = sanitizeUserInput(speech);
+    if (!cleanSpeech) {
+      return NextResponse.json({
+        response: `Hello ${senior.name}, I am Doctor Pup! I am right here listening whenever you are ready.`,
+        action: "CONVERSATION",
+      });
+    }
+
     const gemini = getGeminiClient();
 
     // 1. PRIMARY AI CONVERSATION ENGINE (Gemini)
@@ -75,6 +88,8 @@ export async function POST(req: NextRequest) {
             ? "Respond strictly in gentle French (Français)."
             : "Respond in warm, simple English.";
 
+        const wrappedSpeech = wrapUntrustedInput(cleanSpeech);
+
         const systemPrompt = `You are Doctor Pup, a loving, attentive golden puppy mascot and medical companion for an elderly person named ${senior.name} (age ${senior.age}).
 Active medications: ${medsSummary || "None"}.
 Pending medicines today: ${pendingSummary}.
@@ -82,7 +97,10 @@ Current time period right now: ${currentPeriod}.
 Past health notes: ${memoriesSummary || "None"}.
 ${langInstructions}
 
-Senior said: "${speech}".
+${PROMPT_INJECTION_DEFENSE_PROMPT}
+
+Senior spoken dialogue:
+${wrappedSpeech}
 
 Analyze what the senior said and output a STRICT JSON object with these keys:
 {

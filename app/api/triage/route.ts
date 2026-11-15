@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getGeminiClient, generateWithFallback } from "@/lib/gemini";
+import {
+  sanitizeUserInput,
+  wrapUntrustedInput,
+  PROMPT_INJECTION_DEFENSE_PROMPT,
+} from "@/lib/promptGuard";
 import nodemailer from "nodemailer";
 
 export async function POST(req: NextRequest) {
@@ -51,11 +56,17 @@ export async function POST(req: NextRequest) {
 
     if (gemini) {
       try {
+        const cleanSymptom = sanitizeUserInput(symptom);
+        const wrappedSymptom = wrapUntrustedInput(cleanSymptom);
+
         const systemPrompt = `You are Doctor Pup, a gentle, kind medical assistant for an elderly senior named ${senior.name} (age ${senior.age}).
 Active medications: ${medNames || "None"}.
 Past health notes: ${memoriesText || "None"}.
 
-The senior reported this symptom: "${symptom}".
+${PROMPT_INJECTION_DEFENSE_PROMPT}
+
+The senior reported this symptom:
+${wrappedSymptom}
 
 Analyze the symptom.
 Return a STRICT JSON object with these 4 keys:

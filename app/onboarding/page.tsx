@@ -46,7 +46,7 @@ export default function OnboardingPage() {
   ]);
 
   // Step 3: Caregiver Security PIN
-  const [pin, setPin] = useState<string>("1234");
+  const [pin, setPin] = useState<string>("");
 
   // Step 4: Mascot Welcome Voice State
   const [isPupSpeaking, setIsPupSpeaking] = useState<boolean>(false);
@@ -85,6 +85,8 @@ export default function OnboardingPage() {
     }
 
     setIsSubmitting(true);
+    let saveSucceeded = false;
+
     try {
       const res = await fetch("/api/onboarding", {
         method: "POST",
@@ -93,27 +95,33 @@ export default function OnboardingPage() {
           name: name.trim(),
           age: parseInt(age) || 75,
           caregiverEmail: caregiverEmail.trim(),
-          pin,
+          pin: pin.trim() || "1234",
           medications: validMeds,
         }),
       });
 
-      if (!res.ok) throw new Error("Could not save setup");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Could not save setup");
+      }
 
+      saveSucceeded = true;
       setStep(4);
+      toast.success("Profile and medication schedule saved!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Could not save setup. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
 
-      // Play Doctor Pup's cheerful greeting
+    if (saveSucceeded) {
       const greeting = `Hello ${name.trim()}! I am Doctor Pup, your personal companion. I have all your medicines ready and I will be right here to take care of you every day!`;
-      await playNeuralVoice(greeting, {
+      playNeuralVoice(greeting, {
         onStart: () => setIsPupSpeaking(true),
         onEnd: () => setIsPupSpeaking(false),
         onError: () => setIsPupSpeaking(false),
-      });
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not save setup. Please try again.");
-    } finally {
-      setIsSubmitting(false);
+      }).catch(() => {});
     }
   };
 
@@ -412,8 +420,9 @@ export default function OnboardingPage() {
                   type="password"
                   maxLength={4}
                   value={pin}
+                  placeholder="1234"
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  className="w-36 text-center text-3xl font-mono tracking-widest px-4 py-3 rounded-2xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-36 text-center text-3xl font-mono tracking-widest px-4 py-3 rounded-2xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 placeholder:text-slate-300 placeholder:tracking-widest"
                 />
               </div>
             </div>
