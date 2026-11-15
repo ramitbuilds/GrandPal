@@ -1,79 +1,17 @@
 @import "tailwindcss";
 
-@layer base {
-  :root {
-    --brand-dark: #2E3532;
-    --brand-burgundy: #8B2635;
-    --brand-cream: #E0E2DB;
-    --brand-muted: #D2D4C8;
-    --brand-sage: #D3EFBD;
-  }
+:root {
+  --color-brand: #3b82f6;
+  --color-brand-hover: #2563eb;
+  --color-text-main: #1e293b;
+  --color-text-muted: #64748b;
+  --color-border: #e2e8f0;
 }
 
 body {
-  background-color: var(--brand-cream);
-  color: var(--brand-dark);
-}
-
-@keyframes subtleFloat {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg);
-  }
-  50% {
-    transform: translateY(-4px) rotate(0.5deg);
-  }
-}
-
-@keyframes earTwitch {
-  0%, 90%, 100% {
-    transform: rotate(0deg);
-  }
-  93% {
-    transform: rotate(-4deg);
-  }
-  96% {
-    transform: rotate(3deg);
-  }
-}
-
-@keyframes gentleBlink {
-  0%, 94%, 98%, 100% {
-    transform: scaleY(1);
-  }
-  96% {
-    transform: scaleY(0.1);
-  }
-}
-
-@keyframes beakChatter {
-  0%, 100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(1.4);
-  }
-}
-
-.animate-mascot-float {
-  animation: subtleFloat 4s ease-in-out infinite;
-}
-
-.animate-ear-left {
-  transform-origin: 35px 35px;
-  animation: earTwitch 6s ease-in-out infinite;
-}
-
-.animate-ear-right {
-  transform-origin: 85px 35px;
-  animation: earTwitch 6s ease-in-out infinite 0.3s;
-}
-
-.animate-mascot-blink {
-  transform-origin: center;
-  animation: gentleBlink 5s ease-in-out infinite;
-}
-
-.animate-beak-talk {
-  transform-origin: 60px 58px;
-  animation: beakChatter 0.25s ease-in-out infinite;
+  background-color: #ffffff;
+  color: var(--color-text-main);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
