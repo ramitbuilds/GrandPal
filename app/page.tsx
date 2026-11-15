@@ -277,7 +277,10 @@ export default function Home() {
 
         {/* Mascot Banner with Greeting, Daily Quote, and Two Action Options */}
         <div className="bg-slate-50/70 border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
-          <div className="shrink-0">
+          <div className="shrink-0 relative flex flex-col items-center">
+            {(isPupThinking || isTranscribing) && (
+              <div className="absolute -inset-2 rounded-full bg-indigo-100/70 animate-pulse pointer-events-none" />
+            )}
             <PuppyMascot
               state={
                 submittingId || isPupThinking || isTranscribing
@@ -290,7 +293,7 @@ export default function Home() {
               }
               isCelebrating={isCelebrating}
               isSpeaking={isPupSpeaking}
-              className="w-36 h-36 sm:w-44 sm:h-44"
+              className="w-36 h-36 sm:w-44 sm:h-44 relative z-10"
             />
           </div>
 
@@ -365,16 +368,34 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Live listening caption or text fallback */}
+            {/* Live listening caption, thinking indicator, or text fallback */}
             {isRecording ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-rose-600 pt-1">
                 <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
                 <span>Recording your voice... Speak now, then tap Stop & Send</span>
               </div>
             ) : isTranscribing ? (
-              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-amber-600 pt-1">
-                <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
-                <span>Doctor Pup is listening to your words...</span>
+              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-3.5 py-2 rounded-xl max-w-sm shadow-2xs animate-pulse">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                <span>Hearing your words...</span>
+              </div>
+            ) : isPupThinking ? (
+              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-3.5 py-2 rounded-xl max-w-sm shadow-2xs animate-pulse">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                <span>Doctor Pup is thinking of an answer for you...</span>
+              </div>
+            ) : isPupSpeaking ? (
+              <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-3.5 py-1.5 rounded-xl max-w-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                <span>Doctor Pup is speaking...</span>
               </div>
             ) : (
               <form

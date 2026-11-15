@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PuppyMascot } from "@/components/PuppyMascot";
 import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
+import { PhoneRingback } from "@/lib/ringtone";
 import {
   Mic,
   MicOff,
@@ -38,6 +39,7 @@ export function DoctorPupPhoneCall({
   const [isProcessingAI, setIsProcessingAI] = useState(false);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const ringtoneRef = useRef<PhoneRingback | null>(null);
   const isMicMutedRef = useRef(isMicMuted);
   const isSpeakerMutedRef = useRef(isSpeakerMuted);
 
@@ -126,6 +128,10 @@ export function DoctorPupPhoneCall({
   // Initialize and clean up when modal opens/closes
   useEffect(() => {
     if (!isOpen) {
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+        ringtoneRef.current = null;
+      }
       stopVoice();
       cancelRecording();
       if (timerRef.current) clearInterval(timerRef.current);
@@ -138,17 +144,30 @@ export function DoctorPupPhoneCall({
     setStatus("DIALING");
     setCallDuration(0);
 
-    // Simulate iPhone calling tone / pause for 1.8 seconds, then connect
+    // Start realistic phone calling sound effect (dual tone ringback)
+    const ringtone = new PhoneRingback();
+    ringtoneRef.current = ringtone;
+    ringtone.start();
+
+    // Call rings for 4.2 seconds (approx 2 authentic telephone rings) before Doctor Pup answers
     const connectTimer = setTimeout(() => {
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+        ringtoneRef.current = null;
+      }
       setStatus("CONNECTED");
 
       // Doctor Pup greeting upon answering the phone
       const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
       speakPupResponse(initialGreeting);
-    }, 1800);
+    }, 4200);
 
     return () => {
       clearTimeout(connectTimer);
+      if (ringtoneRef.current) {
+        ringtoneRef.current.stop();
+        ringtoneRef.current = null;
+      }
       stopVoice();
       cancelRecording();
     };
@@ -180,8 +199,8 @@ export function DoctorPupPhoneCall({
     if (isRecording) {
       // User tapped mic button to finish speaking
       const transcript = await stopRecording();
-      if (transcript) {
-        handleSeniorInput(transcript);
+      if (transcript && transcript.trim()) {
+        handleSeniorInput(transcript.trim());
       }
     } else {
       // Start listening
@@ -192,6 +211,10 @@ export function DoctorPupPhoneCall({
   };
 
   const handleEndCall = () => {
+    if (ringtoneRef.current) {
+      ringtoneRef.current.stop();
+      ringtoneRef.current = null;
+    }
     stopVoice();
     cancelRecording();
     setStatus("ENDED");
@@ -216,7 +239,13 @@ export function DoctorPupPhoneCall({
         {/* iPhone Dynamic Island */}
         <div className="w-full pt-1.5 pb-1 flex justify-center items-center z-10">
           <div className="w-20 h-4.5 bg-black rounded-full flex items-center justify-center gap-1.5 px-2">
-            <div className={`w-1.5 h-1.5 rounded-full ${isRecording ? "bg-red-500 animate-pulse" : "bg-emerald-500 animate-pulse"}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              isRecording
+                ? "bg-red-500 animate-pulse"
+                : isProcessingAI || isTranscribing
+                ? "bg-amber-400 animate-ping"
+                : "bg-emerald-500 animate-pulse"
+            }`} />
             <div className="w-1 h-1 rounded-full bg-slate-800" />
           </div>
         </div>
@@ -227,16 +256,18 @@ export function DoctorPupPhoneCall({
           
           <div className="text-xs font-medium text-slate-500 h-5 flex items-center justify-center">
             {status === "DIALING" ? (
-              <span className="animate-pulse">calling...</span>
+              <span className="text-emerald-600 animate-pulse font-medium">calling Doctor Pup...</span>
             ) : status === "CONNECTED" ? (
               isPupSpeaking ? (
                 <span className="text-emerald-600 font-medium animate-pulse">Doctor Pup speaking...</span>
               ) : isTranscribing ? (
                 <span className="text-indigo-600 font-medium flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Transcribing...
+                  <Loader2 className="w-3 h-3 animate-spin" /> Hearing you...
                 </span>
               ) : isProcessingAI ? (
-                <span className="text-indigo-600 font-medium animate-pulse">Doctor Pup thinking...</span>
+                <span className="text-indigo-600 font-medium flex items-center gap-1 animate-pulse">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Thinking of answer...
+                </span>
               ) : isRecording ? (
                 <span className="text-blue-600 font-medium animate-pulse">Listening... (Tap mic when done)</span>
               ) : isMicMuted ? (
@@ -252,12 +283,12 @@ export function DoctorPupPhoneCall({
 
         {/* Center Mascot Avatar with Interactive States */}
         <div className="relative flex flex-col items-center justify-center my-auto z-10">
-          <div className="relative flex items-center justify-center">
+          <div className="relative flex flex-col items-center justify-center">
             {/* Animated Ringing Pulses when Dialing */}
             {status === "DIALING" && (
               <>
-                <div className="absolute w-36 h-36 rounded-full border-2 border-emerald-400/40 animate-ping" />
-                <div className="absolute w-44 h-44 rounded-full border border-emerald-300/30 animate-pulse" />
+                <div className="absolute w-36 h-36 rounded-full border-2 border-emerald-400/50 animate-ping" />
+                <div className="absolute w-44 h-44 rounded-full border border-emerald-300/40 animate-pulse" />
               </>
             )}
 
@@ -267,6 +298,9 @@ export function DoctorPupPhoneCall({
             )}
             {isRecording && (
               <div className="absolute w-36 h-36 rounded-full bg-blue-100/70 animate-ping" />
+            )}
+            {(isProcessingAI || isTranscribing) && (
+              <div className="absolute w-36 h-36 rounded-full bg-indigo-100/60 animate-pulse" />
             )}
 
             {/* Circular Avatar */}
@@ -287,6 +321,28 @@ export function DoctorPupPhoneCall({
                 className="w-28 h-28"
               />
             </div>
+
+            {/* AI Response Generating Indicator Pill */}
+            {(isProcessingAI || isTranscribing) && (
+              <div className="mt-3 flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200/80 rounded-full shadow-2xs animate-in fade-in">
+                <div className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+                <span className="text-[11px] font-semibold text-indigo-700">
+                  {isTranscribing ? "Hearing words..." : "Doctor Pup is thinking..."}
+                </span>
+              </div>
+            )}
+
+            {/* Dialing Indicator Pill */}
+            {status === "DIALING" && (
+              <div className="mt-3 flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200/80 rounded-full animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
+                <span className="text-[11px] font-semibold text-emerald-700">Ringing...</span>
+              </div>
+            )}
           </div>
         </div>
 
