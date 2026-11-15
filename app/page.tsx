@@ -10,14 +10,23 @@ import { DoctorPupPhoneCall } from "@/components/DoctorPupPhoneCall";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import {
+  LanguageCode,
+  SUPPORTED_LANGUAGES,
+  TRANSLATIONS,
+} from "@/lib/translations";
+import {
+  AlertCircle,
   Check,
   Clock,
+  Globe,
   Lock,
   Mic,
   Phone,
   Pill,
   Settings,
   Square,
+  Volume2,
+  X,
 } from "lucide-react";
 
 interface Medication {
@@ -31,35 +40,34 @@ interface Medication {
 interface DoseLog {
   id: string;
   medicationId: string;
+  scheduledFor: string;
   status: string;
-  takenAt?: string;
+  notes?: string;
 }
 
 interface SeniorProfile {
   id: string;
   name: string;
   age: number;
-  caregiverEmail: string;
+  streakDays: number;
   medications: Medication[];
   doseLogs: DoseLog[];
 }
 
-// Warm, uplifting quotes for seniors that rotate daily
 const DAILY_QUOTES = [
-  "Each new morning brings a fresh start. Take it easy and enjoy the quiet, gentle moments today.",
-  "A peaceful heart brings health to the whole body. Have a wonderful and restful day.",
-  "Take today one gentle step at a time, and remember you are deeply cared for.",
-  "Every day is a gift. Smile, breathe deeply, and enjoy your favorite cup of tea.",
-  "You bring warmth to everyone around you. Take good care of yourself today.",
-  "A gentle walk and a quiet mind bring sunshine to every morning.",
-  "Life is made of little moments of joy. Savor the day at your own comfortable pace.",
+  "Today is full of small moments waiting to bring you joy.",
+  "Taking care of yourself is the greatest kindness you can give.",
+  "Every morning is a new beginning, take a deep breath and smile.",
+  "Your health and happiness brighten the days of everyone around you.",
+  "One step, one sip of water, one quiet moment at a time.",
 ];
 
-export default function Home() {
+export default function SeniorDashboard() {
   const [senior, setSenior] = useState<SeniorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [dateString, setDateString] = useState("");
+  const [timeString, setTimeString] = useState("");
   const [greeting, setGreeting] = useState("Good morning");
   const [todayQuote, setTodayQuote] = useState(DAILY_QUOTES[0]);
   const [showPinModal, setShowPinModal] = useState(false);
@@ -68,6 +76,14 @@ export default function Home() {
   const [isPupThinking, setIsPupThinking] = useState(false);
   const [isPupSpeaking, setIsPupSpeaking] = useState(false);
   const [textInput, setTextInput] = useState("");
+
+  // Multilingual State
+  const [language, setLanguage] = useState<LanguageCode>("en");
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
+  const currentVoice = SUPPORTED_LANGUAGES.find((l) => l.code === language)?.voice || "en-US-AnaNeural";
+
+  // Early Dose Protection Modal State
+  const [pendingEarlyMed, setPendingEarlyMed] = useState<Medication | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -81,28 +97,42 @@ export default function Home() {
     }
   }, []);
 
+  // Live Clock and Greeting Timer
   useEffect(() => {
     loadData();
+
+    const updateClock = () => {
+      const now = new Date();
+      setDateString(
+        now.toLocaleDateString("en-US", {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      );
+      setTimeString(
+        now.toLocaleTimeString("en-US", {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      );
+
+      const hour = now.getHours();
+      if (hour < 12) setGreeting(t.goodMorning);
+      else if (hour < 17) setGreeting(t.goodAfternoon);
+      else setGreeting(t.goodEvening);
+    };
+
+    updateClock();
+    const interval = setInterval(updateClock, 1000);
+
     const now = new Date();
-    setDateString(
-      now.toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })
-    );
-
-    // Dynamic time-based greeting
-    const hour = now.getHours();
-    if (hour < 12) setGreeting("Good morning");
-    else if (hour < 17) setGreeting("Good afternoon");
-    else setGreeting("Good evening");
-
-    // Today's quote rotating based on day of month
     const day = now.getDate();
     setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
-  }, [loadData]);
+
+    return () => clearInterval(interval);
+  }, [loadData, t]);
 
   // Handle voice speech input from microphone button
   const handleVoiceInput = useCallback(
@@ -117,6 +147,7 @@ export default function Home() {
           body: JSON.stringify({
             speech: spokenText,
             seniorId: senior.id,
+            language,
           }),
         });
 
@@ -132,6 +163,7 @@ export default function Home() {
 
         // Play Doctor Pup's neural voice response!
         await playNeuralVoice(reply, {
+          voice: currentVoice,
           onStart: () => setIsPupSpeaking(true),
           onEnd: () => setIsPupSpeaking(false),
           onError: () => setIsPupSpeaking(false),
@@ -143,7 +175,7 @@ export default function Home() {
         setIsPupThinking(false);
       }
     },
-    [senior, loadData]
+    [senior, language, currentVoice, loadData]
   );
 
   const {
@@ -167,29 +199,80 @@ export default function Home() {
     }
   };
 
-  const markDoseAsTaken = async (medicationId: string, medicationName?: string) => {
+  // Time Period Determination for Early Dose Checking
+  const getCurrentPeriodOrder = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 1; // Morning
+    if (hour < 17) return 2; // Afternoon
+    if (hour < 21) return 3; // Evening
+    return 4; // Night
+  };
+
+  const getMedPeriodOrder = (timeOfDay: string) => {
+    const lower = timeOfDay.toLowerCase();
+    if (lower.includes("morning")) return 1;
+    if (lower.includes("afternoon")) return 2;
+    if (lower.includes("evening")) return 3;
+    if (lower.includes("night") || lower.includes("bedtime")) return 4;
+    return 1;
+  };
+
+  const getCurrentPeriodName = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return t.morning;
+    if (hour < 17) return t.afternoon;
+    if (hour < 21) return t.evening;
+    return t.night;
+  };
+
+  const handleMedicationClick = (med: Medication) => {
+    const currentOrder = getCurrentPeriodOrder();
+    const medOrder = getMedPeriodOrder(med.timeOfDay);
+
+    // If medicine is scheduled for a future period today, trigger early dose confirmation
+    if (medOrder > currentOrder) {
+      setPendingEarlyMed(med);
+      playNeuralVoice(
+        `Careful, ${senior?.name}! Your ${med.name} is scheduled for ${med.timeOfDay}. Are you taking it now?`,
+        { voice: currentVoice }
+      ).catch(() => {});
+    } else {
+      markDoseAsTaken(med.id, med.name, false);
+    }
+  };
+
+  const markDoseAsTaken = async (medicationId: string, medicationName?: string, isEarly: boolean = false) => {
     if (!senior || submittingId) return;
     setSubmittingId(medicationId);
 
     try {
+      const noteText = isEarly
+        ? `Taken early at ${timeString} (Scheduled for later in the day)`
+        : "Marked as taken on dashboard";
+
       const res = await fetch("/api/doses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           medicationId,
           seniorId: senior.id,
-          note: "Marked as taken on dashboard",
+          note: noteText,
+          status: isEarly ? "TAKEN_EARLY" : "TAKEN",
         }),
       });
 
       if (res.ok) {
         setIsCelebrating(true);
         setTimeout(() => setIsCelebrating(false), 1400);
-        toast.success(
-          medicationName
-            ? `${medicationName} marked as taken. Good job!`
-            : "Medicine marked as taken. Good job!"
-        );
+        setPendingEarlyMed(null);
+
+        const successMsg = isEarly
+          ? `${medicationName || "Medicine"} recorded early at ${timeString}. Caregiver notified.`
+          : medicationName
+          ? `${medicationName} marked as taken. Good job!`
+          : "Medicine marked as taken. Good job!";
+
+        toast.success(successMsg);
         await loadData();
       } else {
         toast.error("Could not record dose. Please try again.");
@@ -202,36 +285,47 @@ export default function Home() {
     }
   };
 
-  const completedMedIds = useMemo(() => {
-    const set = new Set<string>();
+  const completedMedLogs = useMemo(() => {
+    const map = new Map<string, DoseLog>();
     senior?.doseLogs?.forEach((log) => {
-      if (log.status === "TAKEN") {
-        set.add(log.medicationId);
+      if (log.status === "TAKEN" || log.status === "TAKEN_EARLY") {
+        map.set(log.medicationId, log);
       }
     });
-    return set;
+    return map;
   }, [senior?.doseLogs]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-6">
-        <p className="text-base font-medium text-slate-500">Loading your medicines...</p>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 space-y-4">
+        <VectorPuppy className="w-16 h-16 animate-pulse" />
+        <p className="text-base font-semibold text-slate-700">Loading your companion...</p>
       </div>
     );
   }
 
   if (!senior) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-6">
-        <p className="text-base font-medium text-slate-600">No profile found. Please refresh the page.</p>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 space-y-4 text-center">
+        <VectorPuppy className="w-16 h-16" />
+        <h2 className="text-2xl font-bold text-slate-900">Welcome to GrandPal</h2>
+        <p className="text-sm text-slate-600 max-w-sm">
+          Please complete the quick profile setup to get started with Doctor Pup.
+        </p>
+        <Link
+          href="/onboarding"
+          className="px-6 py-3 rounded-2xl bg-slate-900 text-white font-bold text-sm shadow-xs hover:bg-slate-800 transition-all"
+        >
+          Begin Setup
+        </Link>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-white text-slate-800">
-      {/* Top Header: Simple and Uncluttered */}
-      <header className="border-b border-slate-200 bg-white">
+      {/* Top Header: Uncluttered with Live Clock & Language Picker */}
+      <header className="border-b border-slate-200 bg-white sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 flex items-center justify-center">
@@ -242,31 +336,56 @@ export default function Home() {
                 GrandPal
               </span>
               <span className="text-xs text-slate-500 block">
-                Your Daily Health Companion
+                {t.appSubtitle}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-600 hidden sm:block">
-              {dateString}
-            </span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Live Clock & Date */}
+            <div className="text-right hidden sm:block pr-2 border-r border-slate-200">
+              <div className="text-sm font-bold text-slate-900 font-mono tracking-tight">
+                {timeString}
+              </div>
+              <div className="text-xs text-slate-500">
+                {dateString}
+              </div>
+            </div>
+
+            {/* Language Selector Dropdown / Buttons */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              {SUPPORTED_LANGUAGES.map((l) => (
+                <button
+                  key={l.code}
+                  type="button"
+                  onClick={() => setLanguage(l.code)}
+                  className={`px-2 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    language === l.code
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                  title={l.label}
+                >
+                  {l.flag}
+                </button>
+              ))}
+            </div>
 
             <Link
               href="/onboarding"
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 rounded-xl transition-colors"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-2 rounded-xl transition-colors"
             >
               <Settings className="w-3.5 h-3.5 text-slate-500" />
-              <span>Setup</span>
+              <span className="hidden sm:inline">{t.setup}</span>
             </Link>
 
             <button
               type="button"
               onClick={() => setShowPinModal(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 rounded-xl transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-2 rounded-xl transition-colors cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5 text-slate-500" />
-              <span>Caregiver</span>
+              <span className="hidden sm:inline">{t.caregiver}</span>
             </button>
           </div>
         </div>
@@ -275,7 +394,7 @@ export default function Home() {
       {/* Main Senior Screen */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
 
-        {/* Mascot Banner with Greeting, Daily Quote, and Two Action Options */}
+        {/* Mascot Banner with Greeting, Live Time, Daily Quote, and Actions */}
         <div className="bg-slate-50/70 border border-slate-200 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
           <div className="shrink-0 relative flex flex-col items-center">
             {(isPupThinking || isTranscribing) && (
@@ -298,9 +417,14 @@ export default function Home() {
           </div>
 
           <div className="flex-1 text-center sm:text-left space-y-3 w-full">
-            <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-              {greeting}, {senior.name}
-            </h1>
+            <div>
+              <div className="text-xs font-bold tracking-wider uppercase text-slate-500 sm:hidden pb-1">
+                {timeString}
+              </div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+                {greeting}, {senior.name}
+              </h1>
+            </div>
 
             {/* Daily Inspiring Quote */}
             <p className="text-base sm:text-lg text-slate-600 font-medium leading-relaxed italic">
@@ -322,7 +446,7 @@ export default function Home() {
                 <div className="w-7 h-7 rounded-full bg-emerald-700/60 flex items-center justify-center">
                   <Phone className="w-4 h-4 fill-white text-emerald-600" />
                 </div>
-                <span>Call Doctor Pup</span>
+                <span>{t.callPup}</span>
               </button>
 
               {/* Option 2: Microphone Button */}
@@ -360,10 +484,10 @@ export default function Home() {
                 </div>
                 <span>
                   {isRecording
-                    ? "Stop & Send"
+                    ? t.stopAndSend
                     : isTranscribing
-                    ? "Understanding..."
-                    : "Talk to Doctor Pup"}
+                    ? t.hearingWords
+                    : t.talkPup}
                 </span>
               </button>
             </div>
@@ -372,7 +496,7 @@ export default function Home() {
             {isRecording ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-rose-600 pt-1">
                 <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
-                <span>Recording your voice... Speak now, then tap Stop & Send</span>
+                <span>{t.recordingVoice}</span>
               </div>
             ) : isTranscribing ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-3.5 py-2 rounded-xl max-w-sm shadow-2xs animate-pulse">
@@ -381,7 +505,7 @@ export default function Home() {
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "150ms" }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
-                <span>Hearing your words...</span>
+                <span>{t.hearingWords}</span>
               </div>
             ) : isPupThinking ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-3.5 py-2 rounded-xl max-w-sm shadow-2xs animate-pulse">
@@ -390,12 +514,12 @@ export default function Home() {
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "150ms" }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
-                <span>Doctor Pup is thinking of an answer for you...</span>
+                <span>{t.thinkingResponse}</span>
               </div>
             ) : isPupSpeaking ? (
               <div className="flex items-center justify-center sm:justify-start gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-3.5 py-1.5 rounded-xl max-w-sm">
                 <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                <span>Doctor Pup is speaking...</span>
+                <span>{t.pupSpeaking}</span>
               </div>
             ) : (
               <form
@@ -412,7 +536,7 @@ export default function Home() {
                   type="text"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
-                  placeholder="Or type a question for Doctor Pup..."
+                  placeholder={t.typePlaceholder}
                   className="bg-white border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 flex-1 shadow-2xs"
                 />
                 <button
@@ -420,7 +544,7 @@ export default function Home() {
                   disabled={!textInput.trim() || isPupThinking}
                   className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
-                  Send
+                  {t.send}
                 </button>
               </form>
             )}
@@ -429,112 +553,173 @@ export default function Home() {
 
         {/* Medicines Section */}
         <section className="space-y-4">
-          <div className="border-b border-slate-200 pb-3">
-            <h2 className="text-xl font-bold text-slate-900">
-              Today&apos;s Medicines
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Tap the button once you have taken your medicine.
-            </p>
+          <div className="border-b border-slate-200 pb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">
+                {t.todaysMedicines}
+              </h2>
+              <p className="text-sm text-slate-500 mt-0.5">
+                {t.medicinesSubtitle}
+              </p>
+            </div>
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+              {senior.medications.length} total
+            </span>
           </div>
 
           <div className="space-y-4">
-            {senior.medications.map((med) => {
-              const isTaken = completedMedIds.has(med.id);
-              const isSubmitting = submittingId === med.id;
-
-              return (
-                <div
-                  key={med.id}
-                  className={`p-6 rounded-2xl border transition-all ${
-                    isTaken
-                      ? "bg-emerald-50/40 border-emerald-200"
-                      : "bg-white border-slate-200 hover:border-slate-300 shadow-2xs"
-                  }`}
+            {senior.medications.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
+                <p className="text-sm text-slate-500">No medicines scheduled yet.</p>
+                <Link
+                  href="/onboarding"
+                  className="inline-flex text-xs font-bold text-blue-600 hover:text-blue-800"
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                    <div className="flex items-start gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                          isTaken
-                            ? "bg-emerald-600 text-white"
-                            : "bg-blue-50 text-blue-600 border border-blue-200"
-                        }`}
-                      >
+                  + Add medications in Setup
+                </Link>
+              </div>
+            ) : (
+              senior.medications.map((med) => {
+                const doseLog = completedMedLogs.get(med.id);
+                const isTaken = !!doseLog;
+                const isEarly = doseLog?.status === "TAKEN_EARLY";
+                const isSubmitting = submittingId === med.id;
+
+                return (
+                  <div
+                    key={med.id}
+                    className={`p-6 rounded-2xl border transition-all ${
+                      isTaken
+                        ? "bg-emerald-50/40 border-emerald-200"
+                        : "bg-white border-slate-200 hover:border-slate-300 shadow-2xs"
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+                      <div className="flex items-start gap-4">
+                        <div
+                          className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                            isTaken
+                              ? "bg-emerald-600 text-white"
+                              : "bg-blue-50 text-blue-600 border border-blue-200"
+                          }`}
+                        >
+                          {isTaken ? (
+                            <Check className="w-6 h-6 stroke-[3]" />
+                          ) : (
+                            <Pill className="w-6 h-6" />
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-baseline gap-2.5">
+                            <h3
+                              className={`text-xl font-bold ${
+                                isTaken ? "line-through text-slate-400" : "text-slate-900"
+                              }`}
+                            >
+                              {med.name}
+                            </h3>
+                            <span className="text-sm font-semibold text-slate-500">
+                              {med.dosage}
+                            </span>
+                          </div>
+
+                          <p className="text-sm text-slate-600 leading-relaxed">
+                            {med.instructions}
+                          </p>
+
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 pt-0.5">
+                            <Clock className="w-4 h-4 text-slate-400" />
+                            <span>{t.scheduledFor} {med.timeOfDay}</span>
+                            {isEarly && (
+                              <span className="ml-2 px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md font-bold text-[10px]">
+                                {t.takenEarly}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end shrink-0 sm:self-center">
                         {isTaken ? (
-                          <Check className="w-6 h-6 stroke-[3]" />
+                          <span className="text-sm font-bold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-5 py-2.5 rounded-xl flex items-center gap-2">
+                            <Check className="w-4 h-4 stroke-[3]" />
+                            <span>{isEarly ? t.takenEarly : t.taken}</span>
+                          </span>
                         ) : (
-                          <Pill className="w-6 h-6" />
+                          <button
+                            type="button"
+                            onClick={() => handleMedicationClick(med)}
+                            disabled={isSubmitting}
+                            className="text-sm font-bold bg-slate-900 hover:bg-slate-800 active:scale-95 text-white px-6 py-3 rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                          >
+                            {isSubmitting ? "Saving..." : t.markAsTaken}
+                          </button>
                         )}
                       </div>
-
-                      <div className="space-y-1">
-                        <div className="flex items-baseline gap-2.5">
-                          <h3
-                            className={`text-xl font-bold ${
-                              isTaken ? "line-through text-slate-400" : "text-slate-900"
-                            }`}
-                          >
-                            {med.name}
-                          </h3>
-                          <span className="text-sm font-semibold text-slate-500">
-                            {med.dosage}
-                          </span>
-                        </div>
-
-                        <p className="text-sm text-slate-600 leading-relaxed">
-                          {med.instructions}
-                        </p>
-
-                        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 pt-0.5">
-                          <Clock className="w-4 h-4 text-slate-400" />
-                          <span>Scheduled for {med.timeOfDay}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-end shrink-0 sm:self-center">
-                      {isTaken ? (
-                        <span className="text-sm font-bold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-5 py-2.5 rounded-xl flex items-center gap-2">
-                          <Check className="w-4 h-4 stroke-[3]" />
-                          <span>Taken</span>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={isSubmitting}
-                          onClick={() => markDoseAsTaken(med.id, med.name)}
-                          className="text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 px-6 py-3 rounded-xl transition-all shadow-xs cursor-pointer"
-                        >
-                          {isSubmitting ? "Saving..." : "Take Medicine"}
-                        </button>
-                      )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </section>
       </main>
 
-      {/* Clean, Peaceful Footer */}
-      <footer className="border-t border-slate-200 mt-16 py-8 bg-white text-center text-xs text-slate-400">
-        <p>GrandPal • Made with care for your health and peace of mind.</p>
-      </footer>
+      {/* Early Dose Safety Alert Modal */}
+      {pendingEarlyMed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-5 text-center">
+            <div className="w-16 h-16 rounded-full bg-amber-50 border border-amber-200 text-amber-600 mx-auto flex items-center justify-center">
+              <AlertCircle className="w-8 h-8" />
+            </div>
 
-      {/* Caregiver PIN Gate */}
+            <div className="space-y-2">
+              <h3 className="text-2xl font-bold text-slate-900">
+                {t.earlyCheckTitle}
+              </h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                <span className="font-bold text-slate-900">{pendingEarlyMed.name}</span> {t.earlyCheckMessage} (scheduled for <span className="font-semibold text-slate-900">{pendingEarlyMed.timeOfDay}</span>).
+              </p>
+              <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200/70 font-medium">
+                Current time: {timeString} ({getCurrentPeriodName()}). Taking medicines too early can cause unexpected drowsiness or blood pressure drops.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => markDoseAsTaken(pendingEarlyMed.id, pendingEarlyMed.name, true)}
+                className="w-full py-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-xs transition-all cursor-pointer"
+              >
+                {t.yesTakeNow}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPendingEarlyMed(null)}
+                className="w-full py-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-sm transition-colors cursor-pointer"
+              >
+                {t.waitLater}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Caregiver PIN Modal */}
       <CaregiverPinModal
         isOpen={showPinModal}
         onClose={() => setShowPinModal(false)}
       />
 
-      {/* Doctor Pup Phone Call Modal */}
+      {/* Doctor Pup iPhone Phone Call Modal */}
       <DoctorPupPhoneCall
         isOpen={showPhoneCall}
         onClose={() => setShowPhoneCall(false)}
         seniorName={senior.name}
         seniorId={senior.id}
+        language={language}
         onDoseLogged={loadData}
       />
     </div>

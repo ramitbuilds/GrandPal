@@ -31,23 +31,17 @@ export default function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Step 1: Senior & Caregiver Info
-  const [name, setName] = useState<string>("Grandma Mary");
-  const [age, setAge] = useState<string>("76");
-  const [caregiverEmail, setCaregiverEmail] = useState<string>("caregiver@example.com");
+  const [name, setName] = useState<string>("");
+  const [age, setAge] = useState<string>("");
+  const [caregiverEmail, setCaregiverEmail] = useState<string>("");
 
-  // Step 2: Medications
+  // Step 2: Medications (starts clean)
   const [medications, setMedications] = useState<MedicationItem[]>([
     {
-      name: "Lisinopril",
-      dosage: "10mg",
+      name: "",
+      dosage: "",
       timeOfDay: "Morning",
-      instructions: "Take 1 tablet with water after breakfast.",
-    },
-    {
-      name: "Metformin",
-      dosage: "500mg",
-      timeOfDay: "Evening",
-      instructions: "Take with dinner.",
+      instructions: "",
     },
   ]);
 
@@ -79,17 +73,28 @@ export default function OnboardingPage() {
 
   // Complete Onboarding & Save
   const handleCompleteSetup = async () => {
+    if (!name.trim()) {
+      toast.error("Please enter the senior's name");
+      return;
+    }
+
+    const validMeds = medications.filter((m) => m.name.trim().length > 0);
+    if (validMeds.length === 0) {
+      toast.error("Please add at least one medication.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          name: name.trim(),
           age: parseInt(age) || 75,
-          caregiverEmail,
+          caregiverEmail: caregiverEmail.trim(),
           pin,
-          medications,
+          medications: validMeds,
         }),
       });
 
@@ -98,7 +103,7 @@ export default function OnboardingPage() {
       setStep(4);
 
       // Play Doctor Pup's cheerful greeting
-      const greeting = `Hello ${name}! I am Doctor Pup, your personal companion. I have all your medicines ready and I will be right here to take care of you every day!`;
+      const greeting = `Hello ${name.trim()}! I am Doctor Pup, your personal companion. I have all your medicines ready and I will be right here to take care of you every day!`;
       await playNeuralVoice(greeting, {
         onStart: () => setIsPupSpeaking(true),
         onEnd: () => setIsPupSpeaking(false),

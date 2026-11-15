@@ -287,18 +287,55 @@ export default function CaregiverPage() {
   }
 
   const activeMeds = senior.medications.filter((m) => m.active);
-  const takenCount = senior.doseLogs.filter((l) => l.status === "TAKEN").length;
+  const takenCount = senior.doseLogs.filter((l) => l.status === "TAKEN" || l.status === "TAKEN_EARLY").length;
+  const earlyDoses = senior.doseLogs.filter((l) => l.status === "TAKEN_EARLY" || l.notes?.toLowerCase().includes("early"));
 
-  // 7-day adherence vs symptom severity trajectory
-  const trajectoryData = [
-    { day: "Mon", adherence: 100, symptoms: 1 },
-    { day: "Tue", adherence: 100, symptoms: 2 },
-    { day: "Wed", adherence: 66, symptoms: 3 },
-    { day: "Thu", adherence: 100, symptoms: 1 },
-    { day: "Fri", adherence: 100, symptoms: 2 },
-    { day: "Sat", adherence: 100, symptoms: 1 },
-    { day: "Today", adherence: Math.round((takenCount / Math.max(activeMeds.length, 1)) * 100), symptoms: 2 },
-  ];
+  // Real 7-day adherence and symptom severity computed directly from database records
+  const trajectoryData = (() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const points = [];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dayLabel = i === 0 ? "Today" : days[d.getDay()];
+      const datePrefix = d.toISOString().split("T")[0];
+
+      // Match dose logs on this date
+      const dayLogs = senior.doseLogs.filter((l) => {
+        const logDate = new Date(l.scheduledFor).toISOString().split("T")[0];
+        return logDate === datePrefix;
+      });
+
+      let adherenceRate = 0;
+      if (dayLogs.length > 0) {
+        const taken = dayLogs.filter((l) => l.status === "TAKEN" || l.status === "TAKEN_EARLY").length;
+        adherenceRate = Math.round((taken / dayLogs.length) * 100);
+      } else if (i === 0 && activeMeds.length > 0) {
+        adherenceRate = Math.round((takenCount / activeMeds.length) * 100);
+      }
+
+      // Match triage symptom records on this date
+      const dayTriage = triageRecords.filter((t) => {
+        const tDate = new Date(t.createdAt).toISOString().split("T")[0];
+        return tDate === datePrefix;
+      });
+
+      const avgSeverity =
+        dayTriage.length > 0
+          ? Math.round(dayTriage.reduce((sum, item) => sum + item.severityScore, 0) / dayTriage.length)
+          : 0;
+
+      points.push({
+        day: dayLabel,
+        adherence: adherenceRate,
+        symptoms: avgSeverity,
+      });
+    }
+
+    return points;
+  })();
 
   return (
     <div className="min-h-screen bg-white text-slate-800">
@@ -331,6 +368,19 @@ export default function CaregiverPage() {
 
       {/* Main Container */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+        {/* Early Dose Alert Banner */}
+        {earlyDoses.length > 0 && (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5 text-xs">
+              <span className="font-bold block text-sm">Early Dose Notification</span>
+              <p>
+                {senior.name} took {earlyDoses.length} dose{earlyDoses.length > 1 ? "s" : ""} ahead of schedule today. Doctor Pup checked in and alerted monitoring.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

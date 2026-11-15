@@ -5,6 +5,7 @@ import { PuppyMascot } from "@/components/PuppyMascot";
 import { playNeuralVoice, prepareNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { PhoneRingback } from "@/lib/ringtone";
+import { LanguageCode, SUPPORTED_LANGUAGES, TRANSLATIONS } from "@/lib/translations";
 import {
   Mic,
   MicOff,
@@ -19,6 +20,7 @@ interface DoctorPupPhoneCallProps {
   onClose: () => void;
   seniorName: string;
   seniorId: string;
+  language?: LanguageCode;
   onDoseLogged?: () => void;
 }
 
@@ -29,6 +31,7 @@ export function DoctorPupPhoneCall({
   onClose,
   seniorName,
   seniorId,
+  language = "en",
   onDoseLogged,
 }: DoctorPupPhoneCallProps) {
   const [status, setStatus] = useState<CallStatus>("DIALING");
@@ -43,6 +46,9 @@ export function DoctorPupPhoneCall({
   const isMicMutedRef = useRef(isMicMuted);
   const isSpeakerMutedRef = useRef(isSpeakerMuted);
 
+  const t = TRANSLATIONS[language] || TRANSLATIONS.en;
+  const currentVoice = SUPPORTED_LANGUAGES.find((l) => l.code === language)?.voice || "en-US-AnaNeural";
+
   useEffect(() => {
     isMicMutedRef.current = isMicMuted;
   }, [isMicMuted]);
@@ -50,6 +56,37 @@ export function DoctorPupPhoneCall({
   useEffect(() => {
     isSpeakerMutedRef.current = isSpeakerMuted;
   }, [isSpeakerMuted]);
+
+  // Play Doctor Pup's neural voice response (synchronized with mouth animation)
+  const speakPupResponse = useCallback(
+    async (text: string) => {
+      if (isSpeakerMutedRef.current) return;
+
+      setIsPupSpeaking(false);
+
+      await playNeuralVoice(text, {
+        voice: currentVoice,
+        onStart: () => {
+          setIsPupSpeaking(true);
+        },
+        onEnd: () => {
+          setIsPupSpeaking(false);
+          // Auto-listen for senior's reply once Doctor Pup finishes speaking
+          if (!isMicMutedRef.current) {
+            startRecording().catch(() => {});
+          }
+        },
+        onError: () => {
+          setIsPupSpeaking(false);
+          if (!isMicMutedRef.current) {
+            startRecording().catch(() => {});
+          }
+        },
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentVoice]
+  );
 
   // Handle transcribed senior input
   const handleSeniorInput = useCallback(
@@ -65,6 +102,7 @@ export function DoctorPupPhoneCall({
           body: JSON.stringify({
             speech: spokenText,
             seniorId,
+            language,
           }),
         });
 
@@ -84,7 +122,7 @@ export function DoctorPupPhoneCall({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isProcessingAI, seniorId, seniorName, onDoseLogged]
+    [isProcessingAI, seniorId, seniorName, language, onDoseLogged, speakPupResponse]
   );
 
   // Audio Recorder Hook using HTML5 MediaRecorder and Gemini/Python STT
@@ -95,35 +133,6 @@ export function DoctorPupPhoneCall({
     stopRecording,
     cancelRecording,
   } = useAudioRecorder();
-
-  // Play Doctor Pup's neural voice response (synchronized with mouth animation)
-  const speakPupResponse = useCallback(
-    async (text: string) => {
-      if (isSpeakerMutedRef.current) return;
-
-      setIsPupSpeaking(false);
-
-      await playNeuralVoice(text, {
-        onStart: () => {
-          setIsPupSpeaking(true);
-        },
-        onEnd: () => {
-          setIsPupSpeaking(false);
-          // Auto-listen for senior's reply once Doctor Pup finishes speaking
-          if (!isMicMutedRef.current) {
-            startRecording().catch(() => {});
-          }
-        },
-        onError: () => {
-          setIsPupSpeaking(false);
-          if (!isMicMutedRef.current) {
-            startRecording().catch(() => {});
-          }
-        },
-      });
-    },
-    [startRecording]
-  );
 
   // Initialize and clean up when modal opens/closes
   useEffect(() => {
@@ -149,11 +158,18 @@ export function DoctorPupPhoneCall({
     ringtoneRef.current = ringtone;
     ringtone.start();
 
-    // Doctor Pup greeting text
-    const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
+    // Doctor Pup localized greeting text
+    const initialGreeting =
+      language === "es"
+        ? `¡Hola ${seniorName}! Aquí Doctor Pup. Me alegra mucho que hayas llamado. ¿Cómo te sientes hoy?`
+        : language === "hi"
+        ? `नमस्ते ${seniorName}! मैं डॉक्टर पप हूँ। मुझे बहुत खुशी हुई कि आपने कॉल किया। आज आप कैसा महसूस कर रही हैं?`
+        : language === "fr"
+        ? `Bonjour ${seniorName} ! Ici Docteur Pup. Je suis ravi que vous m'appeliez. Comment vous sentez-vous aujourd'hui ?`
+        : `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
 
     // Process and pre-buffer the neural voice in the background WHILE the call is ringing!
-    const preparedVoicePromise = prepareNeuralVoice(initialGreeting);
+    const preparedVoicePromise = prepareNeuralVoice(initialGreeting, { voice: currentVoice });
 
     // Call rings for 4.2 seconds (approx 2 authentic telephone rings) before Doctor Pup answers
     const connectTimer = setTimeout(async () => {
@@ -194,7 +210,7 @@ export function DoctorPupPhoneCall({
       stopVoice();
       cancelRecording();
     };
-  }, [isOpen, seniorName, speakPupResponse, cancelRecording]);
+  }, [isOpen, seniorName, language, currentVoice, speakPupResponse, cancelRecording]);
 
   // Call timer once connected
   useEffect(() => {
@@ -279,27 +295,27 @@ export function DoctorPupPhoneCall({
           
           <div className="text-xs font-medium text-slate-500 h-5 flex items-center justify-center">
             {status === "DIALING" ? (
-              <span className="text-emerald-600 animate-pulse font-medium">calling Doctor Pup...</span>
+              <span className="text-emerald-600 animate-pulse font-medium">{t.callingDoctorPup}</span>
             ) : status === "CONNECTED" ? (
               isPupSpeaking ? (
-                <span className="text-emerald-600 font-medium animate-pulse">Doctor Pup speaking...</span>
+                <span className="text-emerald-600 font-medium animate-pulse">{t.pupSpeaking}</span>
               ) : isTranscribing ? (
                 <span className="text-indigo-600 font-medium flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Hearing you...
+                  <Loader2 className="w-3 h-3 animate-spin" /> {t.hearingYou}
                 </span>
               ) : isProcessingAI ? (
                 <span className="text-indigo-600 font-medium flex items-center gap-1 animate-pulse">
-                  <Loader2 className="w-3 h-3 animate-spin" /> Thinking of answer...
+                  <Loader2 className="w-3 h-3 animate-spin" /> {t.doctorPupThinking}
                 </span>
               ) : isRecording ? (
-                <span className="text-blue-600 font-medium animate-pulse">Listening... (Tap mic when done)</span>
+                <span className="text-blue-600 font-medium animate-pulse">{t.listeningTapMic}</span>
               ) : isMicMuted ? (
-                <span className="text-rose-500">Mic muted</span>
+                <span className="text-rose-500">{t.micMuted}</span>
               ) : (
                 <span className="font-mono text-slate-600">{formatTimer(callDuration)}</span>
               )
             ) : (
-              <span className="text-rose-600">Call Ended</span>
+              <span className="text-rose-600">{t.callEnded}</span>
             )}
           </div>
         </div>
@@ -354,7 +370,7 @@ export function DoctorPupPhoneCall({
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </div>
                 <span className="text-[11px] font-semibold text-indigo-700">
-                  {isTranscribing ? "Hearing words..." : "Doctor Pup is thinking..."}
+                  {isTranscribing ? t.hearingWords : t.doctorPupThinking}
                 </span>
               </div>
             )}
@@ -402,7 +418,7 @@ export function DoctorPupPhoneCall({
                 )}
               </div>
               <span className="text-[10px] font-medium text-slate-500">
-                {isRecording ? "finish" : isMicMuted ? "unmute" : "speak"}
+                {isRecording ? t.finish : isMicMuted ? t.unmute : t.speak}
               </span>
             </button>
 
@@ -436,7 +452,7 @@ export function DoctorPupPhoneCall({
                 {isSpeakerMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </div>
               <span className="text-[10px] font-medium text-slate-500">
-                {isSpeakerMuted ? "muted" : "speaker"}
+                {isSpeakerMuted ? t.muted : t.speaker}
               </span>
             </button>
           </div>
