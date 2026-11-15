@@ -15,10 +15,13 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
+import { CaregiverPortalSkeleton } from "@/components/CaregiverPortalSkeleton";
+import { ProjectRadarAssessment } from "@/components/ProjectRadarAssessment";
 import {
   Activity,
   AlertCircle,
   ArrowLeft,
+  Award,
   Calendar,
   Check,
   Clock,
@@ -82,6 +85,7 @@ export default function CaregiverPage() {
   const [senior, setSenior] = useState<SeniorProfile | null>(null);
   const [triageRecords, setTriageRecords] = useState<TriageRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRadar, setShowRadar] = useState(false);
 
   // Forms
   const [showAddMed, setShowAddMed] = useState(false);
@@ -100,6 +104,20 @@ export default function CaregiverPage() {
   const [sendingEmail, setSendingEmail] = useState(false);
 
   const loadData = useCallback(async () => {
+    // Check local storage for instantaneous display
+    let hasLocal = false;
+    try {
+      const cached = localStorage.getItem("grandpal_senior_profile");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.name) {
+          setSenior(parsed);
+          setLoading(false);
+          hasLocal = true;
+        }
+      }
+    } catch {}
+
     try {
       const [seniorRes, triageRes] = await Promise.all([
         fetch("/api/senior"),
@@ -109,6 +127,9 @@ export default function CaregiverPage() {
       if (seniorRes.ok) {
         const seniorData = await seniorRes.json();
         setSenior(seniorData);
+        try {
+          localStorage.setItem("grandpal_senior_profile", JSON.stringify(seniorData));
+        } catch {}
       }
 
       if (triageRes.ok) {
@@ -118,7 +139,9 @@ export default function CaregiverPage() {
 
       setLoading(false);
     } catch {
-      setLoading(false);
+      if (!hasLocal) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -271,11 +294,7 @@ export default function CaregiverPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-6">
-        <p className="text-sm text-slate-500">Loading caregiver portal...</p>
-      </div>
-    );
+    return <CaregiverPortalSkeleton />;
   }
 
   if (!senior) {
@@ -356,13 +375,24 @@ export default function CaregiverPage() {
             </div>
           </div>
 
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Senior Dashboard</span>
-          </Link>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setShowRadar(true)}
+              className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-3.5 py-2 rounded-lg transition-colors cursor-pointer"
+            >
+              <Award className="w-4 h-4 text-blue-600" />
+              <span>Project Radar</span>
+            </button>
+
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="hidden sm:inline">Senior Dashboard</span>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -938,6 +968,12 @@ export default function CaregiverPage() {
           </div>
         </div>
       </footer>
+
+      {/* Hackathon 6-Pillar Project Radar Assessment Modal */}
+      <ProjectRadarAssessment
+        isOpen={showRadar}
+        onClose={() => setShowRadar(false)}
+      />
     </div>
   );
 }

@@ -44,8 +44,9 @@ yarn-error.log*
 *.webm
 
 # SQLite temp journal and databases
-*.db
 *.db-journal
+*.db
+!prisma/dev.db
 
 # vercel
 .vercel

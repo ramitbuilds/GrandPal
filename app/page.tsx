@@ -9,6 +9,7 @@ import { CaregiverPinModal } from "@/components/CaregiverPinModal";
 import { DoctorPupPhoneCall } from "@/components/DoctorPupPhoneCall";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
+import { SeniorDashboardSkeleton } from "@/components/SeniorDashboardSkeleton";
 import {
   LanguageCode,
   SUPPORTED_LANGUAGES,
@@ -86,14 +87,34 @@ export default function SeniorDashboard() {
   const [pendingEarlyMed, setPendingEarlyMed] = useState<Medication | null>(null);
 
   const loadData = useCallback(async () => {
+    // Check local storage for instantaneous display
+    let hasLocal = false;
+    try {
+      const cached = localStorage.getItem("grandpal_senior_profile");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.name) {
+          setSenior(parsed);
+          setLoading(false);
+          hasLocal = true;
+        }
+      }
+    } catch {}
+
     try {
       const res = await fetch("/api/senior");
-      if (!res.ok) throw new Error("Failed to load profile");
-      const data = await res.json();
-      setSenior(data);
+      if (res.ok) {
+        const data = await res.json();
+        setSenior(data);
+        try {
+          localStorage.setItem("grandpal_senior_profile", JSON.stringify(data));
+        } catch {}
+      }
       setLoading(false);
     } catch {
-      setLoading(false);
+      if (!hasLocal) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -296,12 +317,7 @@ export default function SeniorDashboard() {
   }, [senior?.doseLogs]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 space-y-4">
-        <VectorPuppy className="w-16 h-16 animate-pulse" />
-        <p className="text-base font-semibold text-slate-700">Loading your companion...</p>
-      </div>
-    );
+    return <SeniorDashboardSkeleton />;
   }
 
   if (!senior) {
