@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
+import NumberFlow from "@number-flow/react";
+import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
 import {
   Calendar,
@@ -86,7 +88,7 @@ export default function Home() {
     );
   }, [loadData]);
 
-  const markDoseAsTaken = async (medicationId: string) => {
+  const markDoseAsTaken = async (medicationId: string, medicationName?: string) => {
     if (!senior || submittingId) return;
     setSubmittingId(medicationId);
 
@@ -102,10 +104,18 @@ export default function Home() {
       });
 
       if (res.ok) {
+        toast.success(
+          medicationName
+            ? `${medicationName} marked as taken. Good job!`
+            : "Medicine marked as taken. Good job!"
+        );
         await loadData();
+      } else {
+        toast.error("Could not record dose. Please try again.");
       }
     } catch (err) {
       console.error("Failed to mark dose:", err);
+      toast.error("Network error. Please try again.");
     } finally {
       setSubmittingId(null);
     }
@@ -189,20 +199,28 @@ export default function Home() {
               Hello, {senior.name}
             </h1>
             <p className="text-sm sm:text-base text-slate-600 max-w-xl leading-relaxed">
-              {allDone
-                ? "Great job! All your medicines for today are taken. You can relax and have a wonderful day."
-                : `You have taken ${takenCount} of ${totalCount} medicines today. Here is your daily schedule below.`}
+              {allDone ? (
+                "Great job! All your medicines for today are taken. You can relax and have a wonderful day."
+              ) : (
+                <span>
+                  You have taken <NumberFlow value={takenCount} /> of {totalCount} medicines today. Here is your daily schedule below.
+                </span>
+              )}
             </p>
 
             <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs text-slate-500">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 font-medium">
                 <Check className="w-4 h-4 text-emerald-600" />
-                <span>{takenCount} Taken</span>
+                <span>
+                  <NumberFlow value={takenCount} /> Taken
+                </span>
               </span>
               <span>•</span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 font-medium">
                 <Clock className="w-4 h-4 text-blue-600" />
-                <span>{totalCount - takenCount} Remaining</span>
+                <span>
+                  <NumberFlow value={totalCount - takenCount} /> Remaining
+                </span>
               </span>
             </div>
           </div>
@@ -217,8 +235,8 @@ export default function Home() {
               <h2 className="text-base font-bold text-slate-900">
                 Today&apos;s Medicine Schedule
               </h2>
-              <span className="text-xs text-slate-500">
-                {takenCount} of {totalCount} completed
+              <span className="text-xs font-medium text-slate-500">
+                <NumberFlow value={takenCount} /> of {totalCount} completed
               </span>
             </div>
 
@@ -285,7 +303,7 @@ export default function Home() {
                           <button
                             type="button"
                             disabled={isSubmitting}
-                            onClick={() => markDoseAsTaken(med.id)}
+                            onClick={() => markDoseAsTaken(med.id, med.name)}
                             className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 px-4 py-2 rounded-md transition-colors"
                           >
                             {isSubmitting ? "Saving..." : "Mark as taken"}
