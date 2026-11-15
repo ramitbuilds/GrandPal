@@ -10,6 +10,106 @@ export interface PlayVoiceOptions {
   voice?: string;
 }
 
+export interface PreparedAudio {
+  play: (callbacks?: {
+    onStart?: () => void;
+    onEnd?: () => void;
+    onError?: (err: unknown) => void;
+  }) => Promise<void>;
+  cancel: () => void;
+}
+
+// Pre-fetch and pre-buffer audio so playback can begin with 0ms latency when needed
+export async function prepareNeuralVoice(
+  text: string,
+  options?: { voice?: string }
+): Promise<PreparedAudio> {
+  if (typeof window === "undefined") {
+    return {
+      play: async () => {},
+      cancel: () => {},
+    };
+  }
+
+  let cancelled = false;
+  let audioUrl: string | null = null;
+  let audio: HTMLAudioElement | null = null;
+
+  try {
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        voice: options?.voice ?? "en-US-AnaNeural",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`TTS API returned ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    if (cancelled) return { play: async () => {}, cancel: () => {} };
+
+    audioUrl = URL.createObjectURL(blob);
+    audio = new Audio(audioUrl);
+    audio.preload = "auto";
+  } catch (err) {
+    console.warn("Pre-buffering TTS error:", err);
+  }
+
+  return {
+    play: async (callbacks) => {
+      if (cancelled || !audio || !audioUrl) {
+        callbacks?.onError?.("Audio preparation was cancelled or failed");
+        return;
+      }
+
+      stopVoice();
+      currentAudio = audio;
+
+      audio.onplay = () => {
+        callbacks?.onStart?.();
+      };
+
+      audio.onended = () => {
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        if (currentAudio === audio) {
+          currentAudio = null;
+        }
+        callbacks?.onEnd?.();
+      };
+
+      audio.onerror = (err) => {
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        if (currentAudio === audio) {
+          currentAudio = null;
+        }
+        callbacks?.onError?.(err);
+      };
+
+      try {
+        await audio.play();
+      } catch (playErr) {
+        console.warn("Direct audio play error:", playErr);
+        callbacks?.onError?.(playErr);
+      }
+    },
+    cancel: () => {
+      cancelled = true;
+      if (audio) {
+        audio.pause();
+        audio = null;
+      }
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+        audioUrl = null;
+      }
+    },
+  };
+}
+
 export async function playNeuralVoice(
   text: string,
   options?: PlayVoiceOptions

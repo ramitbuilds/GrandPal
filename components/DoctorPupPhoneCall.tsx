@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { PuppyMascot } from "@/components/PuppyMascot";
-import { playNeuralVoice, stopVoice } from "@/lib/audioPlayer";
+import { playNeuralVoice, prepareNeuralVoice, stopVoice } from "@/lib/audioPlayer";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { PhoneRingback } from "@/lib/ringtone";
 import {
@@ -149,21 +149,44 @@ export function DoctorPupPhoneCall({
     ringtoneRef.current = ringtone;
     ringtone.start();
 
+    // Doctor Pup greeting text
+    const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
+
+    // Process and pre-buffer the neural voice in the background WHILE the call is ringing!
+    const preparedVoicePromise = prepareNeuralVoice(initialGreeting);
+
     // Call rings for 4.2 seconds (approx 2 authentic telephone rings) before Doctor Pup answers
-    const connectTimer = setTimeout(() => {
+    const connectTimer = setTimeout(async () => {
       if (ringtoneRef.current) {
         ringtoneRef.current.stop();
         ringtoneRef.current = null;
       }
       setStatus("CONNECTED");
 
-      // Doctor Pup greeting upon answering the phone
-      const initialGreeting = `Hello ${seniorName}! Doctor Pup here. I am so glad you called. How are you feeling today?`;
-      speakPupResponse(initialGreeting);
+      // The voice was already processed during ringing! Play directly with 0ms delay!
+      try {
+        const preparedVoice = await preparedVoicePromise;
+        if (!isSpeakerMutedRef.current) {
+          await preparedVoice.play({
+            onStart: () => setIsPupSpeaking(true),
+            onEnd: () => {
+              setIsPupSpeaking(false);
+              if (!isMicMutedRef.current) startRecording().catch(() => {});
+            },
+            onError: () => {
+              setIsPupSpeaking(false);
+              if (!isMicMutedRef.current) startRecording().catch(() => {});
+            },
+          });
+        }
+      } catch {
+        speakPupResponse(initialGreeting);
+      }
     }, 4200);
 
     return () => {
       clearTimeout(connectTimer);
+      preparedVoicePromise.then((p) => p.cancel()).catch(() => {});
       if (ringtoneRef.current) {
         ringtoneRef.current.stop();
         ringtoneRef.current = null;
