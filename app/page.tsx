@@ -1,69 +1,110 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import SeniorView from "@/components/SeniorView";
+import { Shield, KeyRound, ArrowLeft } from "lucide-react";
 
 export default function Home() {
+  const [view, setView] = useState<"senior" | "caregiver">("senior");
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [enteredPin, setEnteredPin] = useState("");
+  const [pinError, setPinError] = useState(false);
+
+  const handleOpenCaregiver = () => {
+    setEnteredPin("");
+    setPinError(false);
+    setPinModalOpen(true);
+  };
+
+  const handlePinSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    // Default PIN: 1234
+    if (enteredPin === "1234") {
+      setPinModalOpen(false);
+      setView("caregiver");
+    } else {
+      setPinError(true);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen bg-slate-50">
+      {view === "senior" ? (
+        <SeniorView onSwitchRole={handleOpenCaregiver} />
+      ) : (
+        <div className="min-h-screen p-6 max-w-5xl mx-auto">
+          <header className="flex items-center justify-between mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+            <div>
+              <h1 className="text-3xl font-extrabold text-slate-800">Caregiver Clubhouse</h1>
+              <p className="text-slate-500 font-medium">Monitoring Grandma Mary • Passcode Verified</p>
+            </div>
+            <button
+              onClick={() => setView("senior")}
+              className="flex items-center space-x-2 bg-amber-500 hover:bg-amber-600 text-white px-5 py-3 rounded-2xl font-bold transition"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back to Senior Mode</span>
+            </button>
+          </header>
+
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm text-center py-16">
+            <Shield className="w-16 h-16 text-indigo-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-slate-800">Caregiver Dashboard Access Granted</h2>
+            <p className="text-slate-600 max-w-md mx-auto mt-2">
+              Passcode `1234` confirmed. Full schedule CRUD, Recharts analytics, and email dispatcher are being connected in Phase 3!
+            </p>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      {/* PIN Security Modal */}
+      {pinModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border-2 border-amber-200 text-center animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <KeyRound className="w-8 h-8 text-amber-600" />
+            </div>
+
+            <h3 className="text-2xl font-black text-slate-800">Caregiver Access</h3>
+            <p className="text-slate-500 text-sm mt-1">Enter your 4-digit PIN code (Default: 1234)</p>
+
+            <form onSubmit={handlePinSubmit} className="mt-6 space-y-4">
+              <input
+                type="password"
+                maxLength={4}
+                autoFocus
+                value={enteredPin}
+                onChange={(e) => {
+                  setEnteredPin(e.target.value);
+                  setPinError(false);
+                }}
+                placeholder="••••"
+                className="w-full text-center text-3xl tracking-widest font-mono font-bold py-3 border-2 border-slate-300 rounded-2xl focus:border-amber-500 focus:outline-none"
+              />
+
+              {pinError && (
+                <p className="text-rose-500 text-sm font-semibold">Incorrect PIN code. Try 1234.</p>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPinModalOpen(false)}
+                  className="w-1/2 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl transition shadow-md"
+                >
+                  Unlock
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </main>
+      )}
     </div>
   );
 }
