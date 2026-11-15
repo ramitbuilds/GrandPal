@@ -91,9 +91,10 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
         if (data.action === "DOSE_LOGGED") {
           setMascotState("celebrating");
           confetti({
-            particleCount: 50,
-            spread: 60,
+            particleCount: 45,
+            spread: 55,
             origin: { y: 0.6 },
+            colors: ["#8B2635", "#D3EFBD", "#2E3532"],
           });
           fetchProfile();
         } else {
@@ -149,29 +150,31 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <p className="text-sm font-medium text-slate-500">Connecting audio and profile...</p>
+      <div className="min-h-screen bg-[#E0E2DB] flex items-center justify-center p-4">
+        <p className="text-xs font-semibold tracking-wider text-[#2E3532]/60 uppercase">
+          Initializing audio and medical profile...
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-6 max-w-4xl mx-auto flex flex-col justify-between">
+    <div className="min-h-screen bg-[#E0E2DB] text-[#2E3532] font-sans p-6 max-w-3xl mx-auto flex flex-col justify-between">
       {/* Header bar */}
-      <header className="flex items-center justify-between pb-4 border-b border-slate-200">
+      <header className="flex items-center justify-between pb-4 border-b border-[#D2D4C8]">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">{senior?.name}</h1>
-          <p className="text-xs text-slate-500">Autonomous Voice Companion</p>
+          <h1 className="text-lg font-bold tracking-tight text-[#2E3532]">{senior?.name}</h1>
+          <p className="text-xs text-[#2E3532]/70 font-medium">GrandPal Health Companion</p>
         </div>
 
         <div className="flex items-center space-x-3">
-          <div className="text-xs font-semibold px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-md">
+          <div className="text-xs font-bold px-3 py-1 bg-[#D3EFBD] text-[#2E3532] border border-[#2E3532]/10 rounded-md shadow-xs">
             Streak: {senior?.streakDays} Days
           </div>
 
           <button
             onClick={onSwitchRole}
-            className="flex items-center space-x-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1 rounded-md transition"
+            className="flex items-center space-x-1.5 text-xs font-semibold text-[#2E3532] hover:text-[#8B2635] bg-[#E0E2DB] hover:bg-[#D2D4C8] border border-[#2E3532]/20 px-3 py-1 rounded-md transition"
           >
             <Shield className="w-3.5 h-3.5" />
             <span>Caregiver</span>
@@ -181,16 +184,16 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
 
       {/* Voice Status & Mascot Panel */}
       <section className="my-8 flex flex-col items-center text-center">
-        <div className="relative mb-3">
+        <div className="relative mb-2">
           <BarnabyMascot state={mascotState} className="w-28 h-28" />
           <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
             <span
-              className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wide uppercase border ${
+              className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border ${
                 isListening
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  ? "bg-[#D3EFBD] text-[#2E3532] border-[#2E3532]/20 shadow-xs"
                   : isSpeaking
-                  ? "bg-sky-50 text-sky-700 border-sky-200"
-                  : "bg-slate-100 text-slate-600 border-slate-200"
+                  ? "bg-[#8B2635] text-[#E0E2DB] border-transparent"
+                  : "bg-[#D2D4C8] text-[#2E3532] border-[#2E3532]/20"
               }`}
             >
               {isSpeaking ? "Speaking" : isListening ? "Listening" : "Active"}
@@ -199,13 +202,13 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
         </div>
 
         {/* Ambient Speech bubble */}
-        <div className="w-full max-w-lg mt-2 p-3.5 bg-white border border-slate-200 rounded-xl shadow-xs text-left">
-          <div className="flex items-start space-x-2">
-            <Volume2 className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-            <p className="text-sm font-medium text-slate-700 leading-relaxed">{systemMessage}</p>
+        <div className="w-full max-w-md mt-3 p-4 bg-[#E0E2DB] border border-[#2E3532]/20 rounded-xl shadow-xs text-left">
+          <div className="flex items-start space-x-2.5">
+            <Volume2 className="w-4 h-4 text-[#8B2635] mt-0.5 shrink-0" />
+            <p className="text-xs font-semibold text-[#2E3532] leading-relaxed">{systemMessage}</p>
           </div>
           {lastTranscript && (
-            <p className="mt-2 text-xs text-slate-400 pl-6 border-t border-slate-100 pt-1.5">
+            <p className="mt-2 text-[11px] font-medium text-[#2E3532]/60 pl-6 border-t border-[#D2D4C8] pt-1.5">
               Heard: &ldquo;{lastTranscript}&rdquo;
             </p>
           )}
@@ -214,7 +217,7 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
 
       {/* Routine list */}
       <main className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-[#2E3532]/70">
           Today&apos;s Medication Schedule
         </h2>
 
@@ -227,30 +230,30 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
                 key={med.id}
                 className={`p-3 rounded-lg border text-xs flex items-center justify-between transition ${
                   isDone
-                    ? "bg-slate-100/60 border-slate-200 text-slate-400"
-                    : "bg-white border-slate-200 text-slate-800 shadow-xs"
+                    ? "bg-[#D2D4C8]/50 border-[#D2D4C8] text-[#2E3532]/50"
+                    : "bg-[#E0E2DB] border-[#2E3532]/20 text-[#2E3532] shadow-xs"
                 }`}
               >
                 <div className="flex items-center space-x-3">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center bg-slate-100 text-slate-500">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center bg-[#D2D4C8] text-[#2E3532]">
                     <Clock className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <span className="font-semibold text-slate-900 mr-2">{med.name}</span>
-                    <span className="text-slate-500 mr-3">({med.dosage})</span>
-                    <span className="text-slate-400">{med.instructions}</span>
+                    <span className="font-bold text-[#2E3532] mr-2">{med.name}</span>
+                    <span className="text-[#2E3532]/70 mr-2">({med.dosage})</span>
+                    <span className="text-[#2E3532]/60">{med.instructions}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center space-x-3">
-                  <span className="text-slate-500 font-mono">{med.timeOfDay}</span>
+                  <span className="text-[#2E3532]/70 font-mono text-[11px]">{med.timeOfDay}</span>
                   {isDone ? (
-                    <span className="flex items-center space-x-1 font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    <span className="flex items-center space-x-1 font-semibold text-[#2E3532] bg-[#D3EFBD] px-2 py-0.5 rounded border border-[#2E3532]/10">
                       <Check className="w-3 h-3" />
                       <span>Taken</span>
                     </span>
                   ) : (
-                    <span className="font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    <span className="font-semibold text-[#8B2635] bg-[#8B2635]/10 px-2 py-0.5 rounded border border-[#8B2635]/20">
                       Pending
                     </span>
                   )}
@@ -262,8 +265,8 @@ export default function SeniorView({ onSwitchRole }: { onSwitchRole: () => void 
       </main>
 
       {/* Footer */}
-      <footer className="mt-8 pt-4 border-t border-slate-200 text-center text-xs text-slate-400">
-        GrandPal Continuous Ambient Voice System • Speak naturally to interact
+      <footer className="mt-8 pt-4 border-t border-[#D2D4C8] text-center text-[11px] font-medium text-[#2E3532]/50">
+        GrandPal Autonomous Voice System • Speak naturally to interact
       </footer>
     </div>
   );

@@ -15,79 +15,97 @@ export function BarnabyMascot({ state = "idle", className = "w-32 h-32" }: Masco
   return (
     <div className={`relative flex items-center justify-center select-none ${className}`}>
       <svg
-        viewBox="0 0 160 160"
-        className={`w-full h-full transition-transform duration-300 ${
-          isCelebrating ? "animate-bounce" : isListening ? "scale-105" : ""
+        viewBox="0 0 120 120"
+        className={`w-full h-full transition-transform duration-500 ease-out ${
+          isCelebrating ? "animate-bounce" : isListening ? "scale-105" : "animate-mascot-float"
         }`}
       >
-        {/* Flat color palette inspired by professional Duolingo-style vector character sheets */}
-        
-        {/* Ears */}
-        <polygon points="42,50 30,22 62,38" fill="#D97706" />
-        <polygon points="40,46 34,28 54,38" fill="#FEF3C7" />
+        {/* Shadow */}
+        <ellipse cx="60" cy="112" rx="34" ry="5" fill="#2E3532" opacity="0.12" />
 
-        <polygon points="118,50 130,22 98,38" fill="#D97706" />
-        <polygon points="120,46 126,28 106,38" fill="#FEF3C7" />
-
-        {/* Outer Wings */}
-        <ellipse cx="32" cy="98" rx="12" ry="28" fill="#B45309" transform="rotate(-15 32 98)" />
-        <ellipse cx="128" cy="98" rx="12" ry="28" fill="#B45309" transform="rotate(15 128 98)" />
-
-        {/* Main Body */}
-        <rect x="36" y="38" width="88" height="92" rx="44" fill="#F59E0B" />
-
-        {/* Belly Patch (Cream, crisp flat geometry) */}
-        <path d="M52,78 Q80,68 108,78 Q114,124 80,126 Q46,124 52,78 Z" fill="#FFFBEB" />
-
-        {/* Stethoscope Cord (Doctor / Health Companion) */}
-        <path
-          d="M58,74 C58,110 102,110 102,74"
-          fill="none"
-          stroke="#0284C7"
-          strokeWidth="3"
-          strokeLinecap="round"
+        {/* Left Wing */}
+        <ellipse
+          cx="24"
+          cy="74"
+          rx="10"
+          ry="22"
+          fill="#8B2635"
+          className="transition-transform duration-300"
+          style={{
+            transformOrigin: "24px 60px",
+            transform: isCelebrating ? "rotate(-35deg)" : "rotate(-12deg)",
+          }}
         />
-        <circle cx="80" cy="104" r="5" fill="#38BDF8" stroke="#0369A1" strokeWidth="2" />
 
-        {/* Eyeglasses Frame */}
-        <rect x="42" y="52" width="32" height="26" rx="8" fill="#FFFFFF" stroke="#1E293B" strokeWidth="3" />
-        <rect x="86" y="52" width="32" height="26" rx="8" fill="#FFFFFF" stroke="#1E293B" strokeWidth="3" />
-        <line x1="74" y1="64" x2="86" y2="64" stroke="#1E293B" strokeWidth="3" strokeLinecap="round" />
+        {/* Right Wing */}
+        <ellipse
+          cx="96"
+          cy="74"
+          rx="10"
+          ry="22"
+          fill="#8B2635"
+          className="transition-transform duration-300"
+          style={{
+            transformOrigin: "96px 60px",
+            transform: isCelebrating ? "rotate(35deg)" : "rotate(12deg)",
+          }}
+        />
 
-        {/* Pupils */}
-        {isListening ? (
-          <>
-            <circle cx="58" cy="65" r="7" fill="#0F172A" />
-            <circle cx="102" cy="65" r="7" fill="#0F172A" />
-            <circle cx="56" cy="63" r="2" fill="#FFFFFF" />
-            <circle cx="100" cy="63" r="2" fill="#FFFFFF" />
-          </>
-        ) : isSpeaking ? (
-          <>
-            <circle cx="60" cy="64" r="6" fill="#0F172A" />
-            <circle cx="104" cy="64" r="6" fill="#0F172A" />
-            <circle cx="58" cy="62" r="2" fill="#FFFFFF" />
-            <circle cx="102" cy="62" r="2" fill="#FFFFFF" />
-          </>
-        ) : (
-          <>
-            <circle cx="58" cy="65" r="6" fill="#0F172A" />
-            <circle cx="102" cy="65" r="6" fill="#0F172A" />
-            <circle cx="56" cy="63" r="2" fill="#FFFFFF" />
-            <circle cx="100" cy="63" r="2" fill="#FFFFFF" />
-          </>
-        )}
+        {/* Left Tuft / Ear */}
+        <path
+          d="M32 38 Q22 18 42 26 Z"
+          fill="#8B2635"
+          className={!isCelebrating ? "animate-ear-left" : ""}
+        />
+        <path d="M33 34 Q28 24 38 28 Z" fill="#D3EFBD" />
 
-        {/* Beak / Mouth (Puckered / Open / Resting) */}
-        {isSpeaking ? (
-          <polygon points="80,72 73,86 87,86" fill="#EA580C" />
-        ) : (
-          <polygon points="80,72 74,80 86,80" fill="#EA580C" />
-        )}
+        {/* Right Tuft / Ear */}
+        <path
+          d="M88 38 Q98 18 78 26 Z"
+          fill="#8B2635"
+          className={!isCelebrating ? "animate-ear-right" : ""}
+        />
+        <path d="M87 34 Q92 24 82 28 Z" fill="#D3EFBD" />
 
-        {/* Feet */}
-        <ellipse cx="64" cy="132" rx="8" ry="4" fill="#D97706" />
-        <ellipse cx="96" cy="132" rx="8" ry="4" fill="#D97706" />
+        {/* Main Torso / Body - Premium Dark Charcoal #2E3532 */}
+        <rect x="28" y="28" width="64" height="74" rx="32" fill="#2E3532" />
+
+        {/* Belly Patch - Gentle Sage #D3EFBD */}
+        <path
+          d="M40 58 Q60 50 80 58 Q86 96 60 97 Q34 96 40 58 Z"
+          fill="#D3EFBD"
+        />
+
+        {/* Medical / Care Emblem on Belly - Burgundy #8B2635 */}
+        <rect x="58" y="74" width="4" height="12" rx="2" fill="#8B2635" />
+        <rect x="54" y="78" width="12" height="4" rx="2" fill="#8B2635" />
+
+        {/* Spectacles Frames - Crisp #D2D4C8 */}
+        <circle cx="45" cy="50" r="14" fill="#E0E2DB" stroke="#8B2635" strokeWidth="2.5" />
+        <circle cx="75" cy="50" r="14" fill="#E0E2DB" stroke="#8B2635" strokeWidth="2.5" />
+        <line x1="59" y1="50" x2="61" y2="50" stroke="#8B2635" strokeWidth="2.5" />
+
+        {/* Eyes (Pupils + Catchlights) */}
+        <g className={!isSpeaking ? "animate-mascot-blink" : ""}>
+          {/* Left Eye */}
+          <circle cx="45" cy="50" r={isListening ? 6 : 5} fill="#2E3532" />
+          <circle cx="43" cy="48" r="1.5" fill="#FFFFFF" />
+
+          {/* Right Eye */}
+          <circle cx="75" cy="50" r={isListening ? 6 : 5} fill="#2E3532" />
+          <circle cx="73" cy="48" r="1.5" fill="#FFFFFF" />
+        </g>
+
+        {/* Beak / Mouth */}
+        <path
+          d="M60 56 L55 64 Q60 67 65 64 Z"
+          fill="#8B2635"
+          className={isSpeaking ? "animate-beak-talk" : "transition-transform"}
+        />
+
+        {/* Feet - Burgundy #8B2635 */}
+        <ellipse cx="48" cy="103" rx="6" ry="3" fill="#8B2635" />
+        <ellipse cx="72" cy="103" rx="6" ry="3" fill="#8B2635" />
       </svg>
     </div>
   );
