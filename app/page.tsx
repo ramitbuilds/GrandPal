@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
 import { VectorPuppy } from "@/components/VectorPuppy";
@@ -15,6 +16,7 @@ import {
   Mic,
   Phone,
   Pill,
+  Settings,
   Square,
 } from "lucide-react";
 
@@ -245,10 +247,18 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-slate-600 hidden sm:block">
               {dateString}
             </span>
+
+            <Link
+              href="/onboarding"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 rounded-xl transition-colors"
+            >
+              <Settings className="w-3.5 h-3.5 text-slate-500" />
+              <span>Setup</span>
+            </Link>
 
             <button
               type="button"
