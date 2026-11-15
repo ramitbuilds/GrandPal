@@ -16,14 +16,22 @@ export function getGeminiClient(): { ai: GoogleGenAI; apiKey: string } | null {
   };
 }
 
+export interface FallbackGenerateParams {
+  contents: string | Array<string | Record<string, unknown>>;
+  config?: {
+    systemInstruction?: string;
+    temperature?: number;
+    topP?: number;
+    maxOutputTokens?: number;
+    responseMimeType?: string;
+  };
+}
+
 export async function generateWithFallback(
   ai: GoogleGenAI,
-  requestParams: {
-    contents: any;
-    config?: any;
-  }
+  requestParams: FallbackGenerateParams
 ) {
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   for (const model of GEMINI_FALLBACK_MODELS) {
     try {
@@ -32,9 +40,10 @@ export async function generateWithFallback(
         model,
       });
       return response;
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
-      console.warn(`[Gemini] Model ${model} failed, attempting next model:`, err.message || err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Gemini] Model ${model} failed, attempting next model in resilience chain:`, msg);
     }
   }
 

@@ -51,9 +51,10 @@ export function useAudioRecorder(onTranscript?: (text: string) => void): AudioRe
 
       recorder.start(250); // Slice every 250ms for smooth capture
       setIsRecording(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("Failed to start audio recording:", err);
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+      const errorName = err instanceof Error ? err.name : "";
+      if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
         setError("Microphone permission was denied.");
       } else {
         setError("Could not access microphone.");

@@ -19,15 +19,12 @@ import {
   AlertCircle,
   Check,
   Clock,
-  Globe,
   Lock,
   Mic,
   Phone,
   Pill,
   Settings,
   Square,
-  Volume2,
-  X,
 } from "lucide-react";
 
 interface Medication {
@@ -87,20 +84,6 @@ export default function SeniorDashboard() {
   const [pendingEarlyMed, setPendingEarlyMed] = useState<Medication | null>(null);
 
   const loadData = useCallback(async () => {
-    // Check local storage for instantaneous display
-    let hasLocal = false;
-    try {
-      const cached = localStorage.getItem("grandpal_senior_profile");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.name) {
-          setSenior(parsed);
-          setLoading(false);
-          hasLocal = true;
-        }
-      }
-    } catch {}
-
     try {
       const res = await fetch("/api/senior");
       if (res.ok) {
@@ -110,17 +93,33 @@ export default function SeniorDashboard() {
           localStorage.setItem("grandpal_senior_profile", JSON.stringify(data));
         } catch {}
       }
+    } catch (err) {
+      console.warn("Senior dashboard load warning:", err);
+    } finally {
       setLoading(false);
-    } catch {
-      if (!hasLocal) {
-        setLoading(false);
-      }
     }
   }, []);
 
   // Live Clock and Greeting Timer
   useEffect(() => {
-    loadData();
+    let active = true;
+
+    // Asynchronous cache hydration
+    const hydrationTimer = setTimeout(() => {
+      try {
+        const cached = localStorage.getItem("grandpal_senior_profile");
+        if (cached && active) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.name) {
+            setSenior(parsed);
+          }
+        }
+      } catch {}
+
+      if (active) {
+        loadData();
+      }
+    }, 0);
 
     const updateClock = () => {
       const now = new Date();
@@ -143,16 +142,19 @@ export default function SeniorDashboard() {
       if (hour < 12) setGreeting(t.goodMorning);
       else if (hour < 17) setGreeting(t.goodAfternoon);
       else setGreeting(t.goodEvening);
+
+      setTodayQuote(DAILY_QUOTES[now.getDate() % DAILY_QUOTES.length]);
     };
 
-    updateClock();
+    const initialTimer = setTimeout(updateClock, 0);
     const interval = setInterval(updateClock, 1000);
 
-    const now = new Date();
-    const day = now.getDate();
-    setTodayQuote(DAILY_QUOTES[day % DAILY_QUOTES.length]);
-
-    return () => clearInterval(interval);
+    return () => {
+      active = false;
+      clearTimeout(hydrationTimer);
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, [loadData, t]);
 
   // Handle voice speech input from microphone button

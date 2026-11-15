@@ -169,7 +169,7 @@ export function ProjectRadarAssessment({
                     fillOpacity={0.45}
                   />
                   <Tooltip
-                    formatter={(value: any) => [`${value} / 100`, "Score"]}
+                    formatter={(value: unknown) => [`${String(value)} / 100`, "Score"]}
                     contentStyle={{
                       backgroundColor: "#ffffff",
                       borderRadius: "12px",

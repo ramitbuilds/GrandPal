@@ -8,12 +8,10 @@ import {
   Heart,
   Pill,
   ShieldCheck,
-  Sparkles,
   ArrowRight,
   ArrowLeft,
   Plus,
   Trash2,
-  Clock,
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -156,7 +154,7 @@ export default function OnboardingPage() {
       saveSucceeded = true;
       setStep(4);
       toast.success("Profile and medication schedule saved!");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn("Backend API sync warning:", err);
       // Even if network or database had an issue, client state is saved safely
       saveSucceeded = true;

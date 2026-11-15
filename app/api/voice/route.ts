@@ -6,9 +6,19 @@ import {
   wrapUntrustedInput,
   PROMPT_INJECTION_DEFENSE_PROMPT,
 } from "@/lib/promptGuard";
+import { checkRateLimit, getClientIdentifier } from "@/lib/securityHarness";
 
 export async function POST(req: NextRequest) {
   try {
+    const clientId = getClientIdentifier(req);
+    const rateCheck = checkRateLimit(`voice_${clientId}`, 40, 60000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many voice requests. Please take a breath and try again in a moment." },
+        { status: 429 }
+      );
+    }
+
     const { speech, seniorId, language = "en" } = await req.json();
 
     if (!speech || typeof speech !== "string") {

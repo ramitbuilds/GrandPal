@@ -6,10 +6,20 @@ import {
   wrapUntrustedInput,
   PROMPT_INJECTION_DEFENSE_PROMPT,
 } from "@/lib/promptGuard";
+import { checkRateLimit, getClientIdentifier } from "@/lib/securityHarness";
 import nodemailer from "nodemailer";
 
 export async function POST(req: NextRequest) {
   try {
+    const clientId = getClientIdentifier(req);
+    const rateCheck = checkRateLimit(`triage_${clientId}`, 30, 60000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: "Too many triage requests. Please wait a moment." },
+        { status: 429 }
+      );
+    }
+
     const { symptom, seniorId } = await req.json();
 
     if (!symptom || typeof symptom !== "string") {
@@ -17,7 +27,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Load senior profile with medications and past memories
-    let targetSeniorId = seniorId;
+    const targetSeniorId = seniorId;
     let senior = null;
 
     if (targetSeniorId) {

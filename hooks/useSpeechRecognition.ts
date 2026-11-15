@@ -1,6 +1,42 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
+
+interface SpeechRecognitionResultItem {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: {
+    [index: number]: SpeechRecognitionResultItem;
+  };
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
+
+interface ISpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+interface WindowWithSpeechRecognition {
+  SpeechRecognition?: new () => ISpeechRecognition;
+  webkitSpeechRecognition?: new () => ISpeechRecognition;
+}
 
 interface SpeechRecognitionHook {
   isListening: boolean;
@@ -15,50 +51,47 @@ interface SpeechRecognitionHook {
 export function useSpeechRecognition(onResult?: (text: string) => void): SpeechRecognitionHook {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [hasSupport, setHasSupport] = useState(false);
+  const [hasSupport] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const win = window as unknown as WindowWithSpeechRecognition;
+      return Boolean(win.SpeechRecognition || win.webkitSpeechRecognition);
+    }
+    return false;
+  });
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const transcriptRef = useRef<string>("");
   const listeningIntentRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-      if (SpeechRecognition) {
-        setHasSupport(true);
-      }
-    }
-  }, []);
 
   const createRecognitionInstance = useCallback(() => {
     if (typeof window === "undefined") return null;
 
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const win = window as unknown as WindowWithSpeechRecognition;
+    const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) return null;
+    if (!SpeechRecognitionClass) return null;
 
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionClass();
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let combined = "";
       for (let i = 0; i < event.results.length; i++) {
-        combined += event.results[i][0].transcript + " ";
+        const item = event.results[i]?.[0];
+        if (item) {
+          combined += item.transcript + " ";
+        }
       }
       const clean = combined.trim();
       transcriptRef.current = clean;
       setTranscript(clean);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.warn("Speech recognition status:", event.error);
-      // Suppress network / no-speech errors so we don't frighten seniors with red popups
       if (event.error === "not-allowed") {
         setError("Microphone permission was not allowed.");
       }
@@ -67,7 +100,6 @@ export function useSpeechRecognition(onResult?: (text: string) => void): SpeechR
     };
 
     recognition.onend = () => {
-      // When user stops speaking in single-utterance mode, deliver the captured text!
       const captured = transcriptRef.current.trim();
       if (listeningIntentRef.current && captured && onResult) {
         onResult(captured);
@@ -80,9 +112,10 @@ export function useSpeechRecognition(onResult?: (text: string) => void): SpeechR
   }, [onResult]);
 
   const startListening = useCallback(async () => {
-    setError(null);
-    transcriptRef.current = "";
-    setTranscript("");
+    if (!hasSupport) {
+      setError("Speech recognition is not supported in this browser.");
+      return;
+    }
 
     try {
       if (recognitionRef.current) {
@@ -91,26 +124,30 @@ export function useSpeechRecognition(onResult?: (text: string) => void): SpeechR
         } catch {}
       }
 
-      const rec = createRecognitionInstance();
-      if (!rec) {
-        setError("Speech recognition is not available in this browser.");
+      const instance = createRecognitionInstance();
+      if (!instance) {
+        setError("Failed to create speech recognition instance.");
         return;
       }
 
-      recognitionRef.current = rec;
+      recognitionRef.current = instance;
+      transcriptRef.current = "";
+      setTranscript("");
+      setError(null);
       listeningIntentRef.current = true;
       setIsListening(true);
-      rec.start();
-    } catch (e) {
-      console.warn("Speech start issue:", e);
-      listeningIntentRef.current = false;
-      setIsListening(false);
-    }
-  }, [createRecognitionInstance]);
 
-  const stopListening = useCallback(() => {
+      instance.start();
+    } catch (err: unknown) {
+      console.warn("Speech recognition start warning:", err);
+      setIsListening(false);
+      listeningIntentRef.current = false;
+    }
+  }, [hasSupport, createRecognitionInstance]);
+
+  const stopListening = useCallback((): string => {
     listeningIntentRef.current = false;
-    const captured = transcriptRef.current.trim();
+    setIsListening(false);
 
     if (recognitionRef.current) {
       try {
@@ -118,31 +155,13 @@ export function useSpeechRecognition(onResult?: (text: string) => void): SpeechR
       } catch {}
     }
 
-    setIsListening(false);
-
-    if (onResult && captured) {
-      onResult(captured);
-    }
-
-    return captured;
-  }, [onResult]);
+    return transcriptRef.current;
+  }, []);
 
   const resetTranscript = useCallback(() => {
     transcriptRef.current = "";
     setTranscript("");
     setError(null);
-  }, []);
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => {
-      listeningIntentRef.current = false;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch {}
-      }
-    };
   }, []);
 
   return {

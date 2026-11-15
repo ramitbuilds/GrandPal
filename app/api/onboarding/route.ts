@@ -1,11 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hashPasscode } from "@/lib/securityHarness";
+import { hashPasscode, checkRateLimit, getClientIdentifier } from "@/lib/securityHarness";
+import { Medication } from "@/lib/types";
+
+interface OnboardingMedicationInput {
+  name: string;
+  dosage?: string;
+  timeOfDay?: string;
+  instructions?: string;
+}
+
+interface OnboardingRequestBody {
+  name?: string;
+  age?: number | string;
+  caregiverEmail?: string;
+  pin?: string;
+  medications?: OnboardingMedicationInput[];
+}
 
 export async function POST(req: NextRequest) {
-  let body: any = {};
+  const clientId = getClientIdentifier(req);
+  const rateCheck = checkRateLimit(`onboarding_${clientId}`, 15, 60000);
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: "Too many onboarding requests. Please wait a moment." },
+      { status: 429 }
+    );
+  }
+
+  let body: OnboardingRequestBody = {};
   try {
-    body = await req.json();
+    body = (await req.json()) as OnboardingRequestBody;
   } catch {
     body = {};
   }
@@ -17,9 +42,12 @@ export async function POST(req: NextRequest) {
   const passcode = (pin && String(pin).trim()) || "1234";
   const passcodeHash = hashPasscode(passcode);
 
-  const medList =
+  const medList: OnboardingMedicationInput[] =
     Array.isArray(medications) && medications.length > 0
-      ? medications.filter((m: any) => m && m.name && String(m.name).trim().length > 0)
+      ? medications.filter(
+          (m): m is OnboardingMedicationInput =>
+            Boolean(m) && typeof m.name === "string" && m.name.trim().length > 0
+        )
       : [
           {
             name: "Lisinopril",
@@ -112,7 +140,7 @@ export async function POST(req: NextRequest) {
 
     // Fallback: construct in-memory resilient profile so client is never blocked
     const fallbackSeniorId = `senior-${Date.now()}`;
-    const fallbackMeds = medList.map((m: any, idx: number) => ({
+    const fallbackMeds: Medication[] = medList.map((m, idx) => ({
       id: `med-${Date.now()}-${idx}`,
       seniorId: fallbackSeniorId,
       name: String(m.name).trim(),
@@ -124,7 +152,7 @@ export async function POST(req: NextRequest) {
       active: true,
     }));
 
-    const fallbackDoses = fallbackMeds.map((med: any) => ({
+    const fallbackDoses = fallbackMeds.map((med) => ({
       id: `dose-${med.id}`,
       seniorId: fallbackSeniorId,
       medicationId: med.id,

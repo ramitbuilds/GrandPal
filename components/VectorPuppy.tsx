@@ -25,14 +25,8 @@ export function VectorPuppy({
   const [lookOffset, setLookOffset] = useState({ x: 0, y: 0 });
   const [internalCelebrate, setInternalCelebrate] = useState(false);
 
-  // Sync external celebrate prop
-  useEffect(() => {
-    if (isCelebrating) {
-      setInternalCelebrate(true);
-      const timer = setTimeout(() => setInternalCelebrate(false), 1400);
-      return () => clearTimeout(timer);
-    }
-  }, [isCelebrating]);
+  // Internal state for click celebration
+  const isCurrentlyCelebrating = isCelebrating || internalCelebrate;
 
   // Natural Random Blinking (Every 3.2s - 5.5s)
   useEffect(() => {
@@ -83,7 +77,7 @@ export function VectorPuppy({
     }, 750);
   }, []);
 
-  const activeState = internalCelebrate ? "celebrating" : state;
+  const activeState = isCurrentlyCelebrating ? "celebrating" : state;
   const eyesClosed = isBlinking || activeState === "celebrating";
 
   // Duolingo Lily Thinking State gaze offset (looking up and to the right)

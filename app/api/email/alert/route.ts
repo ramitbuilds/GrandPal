@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
         subject,
         text,
       });
+      if (process.env.NODE_ENV === "development") {
+        console.log("Email alert dispatched with ID:", info.messageId);
+      }
       sent = true;
     } else {
       // Offline / Hackathon Demo test transport

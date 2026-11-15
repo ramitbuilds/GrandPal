@@ -46,6 +46,15 @@ export function DoctorPupPhoneCall({
   const isMicMutedRef = useRef(isMicMuted);
   const isSpeakerMutedRef = useRef(isSpeakerMuted);
 
+  // Audio Recorder Hook using HTML5 MediaRecorder and Gemini/Python STT
+  const {
+    isRecording,
+    isTranscribing,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+  } = useAudioRecorder();
+
   const t = TRANSLATIONS[language] || TRANSLATIONS.en;
   const currentVoice = SUPPORTED_LANGUAGES.find((l) => l.code === language)?.voice || "en-US-AnaNeural";
 
@@ -84,8 +93,7 @@ export function DoctorPupPhoneCall({
         },
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentVoice]
+    [currentVoice, startRecording]
   );
 
   // Handle transcribed senior input
@@ -121,37 +129,12 @@ export function DoctorPupPhoneCall({
         setIsProcessingAI(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isProcessingAI, seniorId, seniorName, language, onDoseLogged, speakPupResponse]
   );
 
-  // Audio Recorder Hook using HTML5 MediaRecorder and Gemini/Python STT
-  const {
-    isRecording,
-    isTranscribing,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-  } = useAudioRecorder();
-
   // Initialize and clean up when modal opens/closes
   useEffect(() => {
-    if (!isOpen) {
-      if (ringtoneRef.current) {
-        ringtoneRef.current.stop();
-        ringtoneRef.current = null;
-      }
-      stopVoice();
-      cancelRecording();
-      if (timerRef.current) clearInterval(timerRef.current);
-      setStatus("DIALING");
-      setCallDuration(0);
-      setIsPupSpeaking(false);
-      return;
-    }
-
-    setStatus("DIALING");
-    setCallDuration(0);
+    if (!isOpen) return;
 
     // Start realistic phone calling sound effect (dual tone ringback)
     const ringtone = new PhoneRingback();
@@ -209,8 +192,12 @@ export function DoctorPupPhoneCall({
       }
       stopVoice();
       cancelRecording();
+      if (timerRef.current) clearInterval(timerRef.current);
+      setStatus("DIALING");
+      setCallDuration(0);
+      setIsPupSpeaking(false);
     };
-  }, [isOpen, seniorName, language, currentVoice, speakPupResponse, cancelRecording]);
+  }, [isOpen, seniorName, language, currentVoice, speakPupResponse, cancelRecording, startRecording]);
 
   // Call timer once connected
   useEffect(() => {

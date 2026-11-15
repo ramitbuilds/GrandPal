@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { VectorPuppy } from "@/components/VectorPuppy";
@@ -25,14 +24,12 @@ import {
   Calendar,
   Check,
   Clock,
-  Heart,
   Mail,
   MapPin,
   Pill,
   Plus,
   Send,
   Trash2,
-  User,
 } from "lucide-react";
 
 interface Medication {
@@ -104,20 +101,6 @@ export default function CaregiverPage() {
   const [sendingEmail, setSendingEmail] = useState(false);
 
   const loadData = useCallback(async () => {
-    // Check local storage for instantaneous display
-    let hasLocal = false;
-    try {
-      const cached = localStorage.getItem("grandpal_senior_profile");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.name) {
-          setSenior(parsed);
-          setLoading(false);
-          hasLocal = true;
-        }
-      }
-    } catch {}
-
     try {
       const [seniorRes, triageRes] = await Promise.all([
         fetch("/api/senior"),
@@ -136,17 +119,37 @@ export default function CaregiverPage() {
         const triageData = await triageRes.json();
         setTriageRecords(triageData);
       }
-
+    } catch (err) {
+      console.warn("Caregiver loadData sync warning:", err);
+    } finally {
       setLoading(false);
-    } catch {
-      if (!hasLocal) {
-        setLoading(false);
-      }
     }
   }, []);
 
   useEffect(() => {
-    loadData();
+    let active = true;
+
+    // Asynchronous cache hydration
+    const timer = setTimeout(() => {
+      try {
+        const cached = localStorage.getItem("grandpal_senior_profile");
+        if (cached && active) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed.name) {
+            setSenior(parsed);
+          }
+        }
+      } catch {}
+
+      if (active) {
+        loadData();
+      }
+    }, 0);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [loadData]);
 
   const handleCreateMedication = async (e: React.FormEvent) => {

@@ -114,12 +114,13 @@ export function CaregiverPinModal({ isOpen, onClose }: PinModalProps) {
             <button
               key={num}
               type="button"
+              disabled={loading}
               onClick={() => {
                 const next = pin + num;
                 handleDigit(num);
                 if (next.length === 4) handleVerify(next);
               }}
-              className="h-12 rounded-xl bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-800 font-semibold text-base transition-colors flex items-center justify-center border border-slate-200"
+              className="h-12 rounded-xl bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-800 font-semibold text-base transition-colors flex items-center justify-center border border-slate-200 disabled:opacity-50"
             >
               {num}
             </button>

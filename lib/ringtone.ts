@@ -11,7 +11,10 @@ export class PhoneRingback {
     this.isPlaying = true;
 
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
       this.ctx = new AudioCtx();
 
       const playBurst = () => {

@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
-import { Activity, AlertCircle, Check, Heart, Send, X } from "lucide-react";
+import { Activity, AlertCircle, Heart, Send, X } from "lucide-react";
 
 interface HealthCheckupModalProps {
   isOpen: boolean;
