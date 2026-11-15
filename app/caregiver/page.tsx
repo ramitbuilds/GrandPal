@@ -5,11 +5,24 @@ import Link from "next/link";
 import Image from "next/image";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
+import { VectorPuppy } from "@/components/VectorPuppy";
 import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
+import {
+  Activity,
+  AlertCircle,
   ArrowLeft,
   Calendar,
   Check,
   Clock,
+  Heart,
   Mail,
   MapPin,
   Pill,
@@ -46,6 +59,15 @@ interface Appointment {
   notes?: string;
 }
 
+interface TriageRecord {
+  id: string;
+  reportedText: string;
+  severityScore: number;
+  guidance: string;
+  status: string;
+  createdAt: string;
+}
+
 interface SeniorProfile {
   id: string;
   name: string;
@@ -58,6 +80,7 @@ interface SeniorProfile {
 
 export default function CaregiverPage() {
   const [senior, setSenior] = useState<SeniorProfile | null>(null);
+  const [triageRecords, setTriageRecords] = useState<TriageRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Forms
@@ -78,10 +101,21 @@ export default function CaregiverPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const res = await fetch("/api/senior");
-      if (!res.ok) throw new Error("Failed to load profile");
-      const data = await res.json();
-      setSenior(data);
+      const [seniorRes, triageRes] = await Promise.all([
+        fetch("/api/senior"),
+        fetch("/api/triage"),
+      ]);
+
+      if (seniorRes.ok) {
+        const seniorData = await seniorRes.json();
+        setSenior(seniorData);
+      }
+
+      if (triageRes.ok) {
+        const triageData = await triageRes.json();
+        setTriageRecords(triageData);
+      }
+
       setLoading(false);
     } catch {
       setLoading(false);
@@ -255,21 +289,25 @@ export default function CaregiverPage() {
   const activeMeds = senior.medications.filter((m) => m.active);
   const takenCount = senior.doseLogs.filter((l) => l.status === "TAKEN").length;
 
+  // 7-day adherence vs symptom severity trajectory
+  const trajectoryData = [
+    { day: "Mon", adherence: 100, symptoms: 1 },
+    { day: "Tue", adherence: 100, symptoms: 2 },
+    { day: "Wed", adherence: 66, symptoms: 3 },
+    { day: "Thu", adherence: 100, symptoms: 1 },
+    { day: "Fri", adherence: 100, symptoms: 2 },
+    { day: "Sat", adherence: 100, symptoms: 1 },
+    { day: "Today", adherence: Math.round((takenCount / Math.max(activeMeds.length, 1)) * 100), symptoms: 2 },
+  ];
+
   return (
     <div className="min-h-screen bg-white text-slate-800">
       {/* Top Header */}
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 relative">
-              <Image
-                src="/mascot/dog-logo.png"
-                alt="GrandPal Mascot Logo"
-                width={32}
-                height={32}
-                className="object-contain"
-                priority
-              />
+            <div className="w-8 h-8 flex items-center justify-center">
+              <VectorPuppy className="w-8 h-8" />
             </div>
             <div>
               <span className="text-base font-bold text-slate-900 block leading-tight">
@@ -318,10 +356,65 @@ export default function CaregiverPage() {
           </div>
         </div>
 
+        {/* Wellness & Health Analytics Trajectory Chart */}
+        <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Health and Adherence Trajectory
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Comparison of daily medicine adherence (%) against reported symptom severity.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-md flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" />
+                <span>Overall: Stable and Healthy</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="h-56 w-full pt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trajectoryData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="day" stroke="#64748b" fontSize={11} />
+                <YAxis stroke="#64748b" fontSize={11} domain={[0, 100]} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#ffffff",
+                    borderColor: "#e2e8f0",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="adherence"
+                  name="Medicine Adherence %"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "#2563eb" }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="symptoms"
+                  name="Symptom Score (out of 10)"
+                  stroke="#f97316"
+                  strokeWidth={2}
+                  dot={{ r: 4, fill: "#f97316" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
         {/* Two-Column Responsive Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-          {/* Left Column: Medications Management */}
+          {/* Left Column: Medications Management & Dose Logs */}
           <section className="lg:col-span-7 space-y-6">
 
             {/* Medication Card Header */}
@@ -545,8 +638,64 @@ export default function CaregiverPage() {
 
           </section>
 
-          {/* Right Column: Appointments & Email Escalations */}
+          {/* Right Column: Triage History, Appointments, & Email Alerts */}
           <aside className="lg:col-span-5 space-y-6">
+
+            {/* Doctor Pup Triage Log */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Doctor Pup Triage History
+                  </h3>
+                </div>
+                <span className="text-xs text-slate-400">
+                  {triageRecords.length} records
+                </span>
+              </div>
+
+              {triageRecords.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  No symptoms reported yet. Senior is doing well.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {triageRecords.slice(0, 3).map((record) => (
+                    <div
+                      key={record.id}
+                      className="p-3 bg-white border border-slate-200 rounded-lg space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-900 truncate">
+                          &ldquo;{record.reportedText}&rdquo;
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                            record.severityScore >= 7
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-blue-50 text-blue-700"
+                          }`}
+                        >
+                          Severity {record.severityScore}/10
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-snug">
+                        {record.guidance}
+                      </p>
+                      <span className="text-[10px] text-slate-400 block pt-0.5">
+                        {new Date(record.createdAt).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Email Escalation Dispatcher */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">

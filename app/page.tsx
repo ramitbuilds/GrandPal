@@ -5,8 +5,11 @@ import Image from "next/image";
 import NumberFlow from "@number-flow/react";
 import { toast } from "sonner";
 import { PuppyMascot } from "@/components/PuppyMascot";
+import { VectorPuppy } from "@/components/VectorPuppy";
 import { CaregiverPinModal } from "@/components/CaregiverPinModal";
+import { HealthCheckupModal } from "@/components/HealthCheckupModal";
 import {
+  Activity,
   Calendar,
   Check,
   Clock,
@@ -65,6 +68,8 @@ export default function Home() {
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [dateString, setDateString] = useState("");
   const [showPinModal, setShowPinModal] = useState(false);
+  const [showCheckupModal, setShowCheckupModal] = useState(false);
+  const [isCelebrating, setIsCelebrating] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -107,6 +112,8 @@ export default function Home() {
       });
 
       if (res.ok) {
+        setIsCelebrating(true);
+        setTimeout(() => setIsCelebrating(false), 1000);
         toast.success(
           medicationName
             ? `${medicationName} marked as taken. Good job!`
@@ -157,15 +164,8 @@ export default function Home() {
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 relative">
-              <Image
-                src="/mascot/dog-logo.png"
-                alt="GrandPal Mascot Logo"
-                width={36}
-                height={36}
-                className="object-contain"
-                priority
-              />
+            <div className="w-9 h-9 flex items-center justify-center">
+              <VectorPuppy className="w-9 h-9" />
             </div>
             <div>
               <span className="text-base font-bold text-slate-900 block leading-tight">
@@ -205,7 +205,11 @@ export default function Home() {
         {/* Welcome Mascot Banner */}
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
           <div className="shrink-0">
-            <PuppyMascot className="w-32 h-32 sm:w-40 sm:h-40" />
+            <PuppyMascot
+              state={submittingId ? "thinking" : isCelebrating ? "celebrating" : "idle"}
+              isCelebrating={isCelebrating}
+              className="w-32 h-32 sm:w-40 sm:h-40"
+            />
           </div>
 
           <div className="flex-1 text-center sm:text-left space-y-2">
@@ -236,6 +240,15 @@ export default function Home() {
                   <NumberFlow value={totalCount - takenCount} /> Remaining
                 </span>
               </span>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => setShowCheckupModal(true)}
+                className="flex items-center gap-1.5 font-semibold text-blue-700 hover:text-blue-900 transition-colors"
+              >
+                <Activity className="w-4 h-4 text-blue-600" />
+                <span>Health check with Doctor Pup</span>
+              </button>
             </div>
           </div>
         </div>
@@ -434,6 +447,13 @@ export default function Home() {
       <CaregiverPinModal
         isOpen={showPinModal}
         onClose={() => setShowPinModal(false)}
+      />
+
+      <HealthCheckupModal
+        isOpen={showCheckupModal}
+        onClose={() => setShowCheckupModal(false)}
+        seniorName={senior.name}
+        onFactAdded={loadData}
       />
     </div>
   );

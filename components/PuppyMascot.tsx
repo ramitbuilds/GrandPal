@@ -1,23 +1,24 @@
 "use client";
 
 import React from "react";
-import Image from "next/image";
+import { VectorPuppy, PuppyState } from "@/components/VectorPuppy";
 
 interface MascotProps {
+  state?: PuppyState;
   className?: string;
+  isCelebrating?: boolean;
 }
 
-export function PuppyMascot({ className = "w-40 h-40" }: MascotProps) {
+export function PuppyMascot({
+  state = "idle",
+  className = "w-36 h-36",
+  isCelebrating = false,
+}: MascotProps) {
   return (
-    <div className={`relative flex items-center justify-center select-none ${className}`}>
-      <Image
-        src="/mascot/mascot-dog.png"
-        alt="GrandPal Dog Mascot"
-        width={320}
-        height={320}
-        priority
-        className="object-contain w-full h-full"
-      />
-    </div>
+    <VectorPuppy
+      state={state}
+      className={className}
+      isCelebrating={isCelebrating}
+    />
   );
 }

@@ -15,3 +15,27 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@keyframes puppyBreathe {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(0.6deg);
+  }
+}
+
+@keyframes puppyCelebrate {
+  0% { transform: scale(1) translateY(0); }
+  35% { transform: scale(1.1) translateY(-14px) rotate(-2deg); }
+  65% { transform: scale(1.04) translateY(-6px) rotate(1.5deg); }
+  100% { transform: scale(1) translateY(0); }
+}
+
+.animate-mascot-breathe {
+  animation: puppyBreathe 3.6s ease-in-out infinite;
+}
+
+.animate-mascot-celebrate {
+  animation: puppyCelebrate 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
