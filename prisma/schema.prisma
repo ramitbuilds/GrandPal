@@ -1,0 +1,82 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model SeniorProfile {
+  id             String           @id @default(uuid())
+  name           String           @default("Grandma Mary")
+  age            Int              @default(76)
+  passcodeHash   String           @default("1234")
+  caregiverEmail String           @default("caregiver@example.com")
+  streakDays     Int              @default(4)
+  createdAt      DateTime         @default(now())
+  medications    Medication[]
+  doseLogs       DoseLog[]
+  appointments   Appointment[]
+  memories       AdaptiveMemory[]
+  triageRecords  TriageRecord[]
+}
+
+model Medication {
+  id           String        @id @default(uuid())
+  seniorId     String
+  name         String
+  dosage       String
+  timeOfDay    String
+  instructions String
+  color        String        @default("bg-amber-100 text-amber-900 border-amber-300")
+  shape        String        @default("pill")
+  active       Boolean       @default(true)
+  senior       SeniorProfile @relation(fields: [seniorId], references: [id], onDelete: Cascade)
+  doseLogs     DoseLog[]
+}
+
+model DoseLog {
+  id           String        @id @default(uuid())
+  seniorId     String
+  medicationId String
+  scheduledFor DateTime
+  takenAt      DateTime?
+  status       String        // "TAKEN", "MISSED", "PENDING"
+  notes        String?
+  senior       SeniorProfile @relation(fields: [seniorId], references: [id], onDelete: Cascade)
+  medication   Medication    @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+}
+
+model Appointment {
+  id         String        @id @default(uuid())
+  seniorId   String
+  doctorName String
+  specialty  String
+  date       DateTime
+  location   String
+  notes      String?
+  notified   Boolean       @default(false)
+  senior     SeniorProfile @relation(fields: [seniorId], references: [id], onDelete: Cascade)
+}
+
+model AdaptiveMemory {
+  id         String        @id @default(uuid())
+  seniorId   String
+  category   String        // "FAMILY", "HABIT", "SYMPTOM", "PREFERENCE"
+  keyFact    String
+  confidence Float         @default(1.0)
+  createdAt  DateTime      @default(now())
+  senior     SeniorProfile @relation(fields: [seniorId], references: [id], onDelete: Cascade)
+}
+
+model TriageRecord {
+  id            String        @id @default(uuid())
+  seniorId      String
+  reportedText  String
+  severityScore Int           // 1 to 10
+  guidance      String
+  status        String        // "RESOLVED", "ESCALATED"
+  createdAt     DateTime      @default(now())
+  senior        SeniorProfile @relation(fields: [seniorId], references: [id], onDelete: Cascade)
+}
