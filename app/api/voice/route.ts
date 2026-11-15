@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient, generateWithFallback } from "@/lib/gemini";
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,23 +49,110 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Senior profile not found" }, { status: 404 });
     }
 
+    const medsSummary = senior.medications
+      .map((m) => `${m.name} (${m.dosage}, ${m.timeOfDay}) - ${m.instructions}`)
+      .join("; ");
+    const pendingMeds = senior.medications.filter(
+      (m) => !senior.doseLogs.some((l) => l.medicationId === m.id && l.status === "TAKEN")
+    );
+    const pendingSummary = pendingMeds.map((m) => m.name).join(", ") || "None (all taken today)";
+    const memoriesSummary = senior.memories.map((m) => m.keyFact).join("; ");
+
+    const gemini = getGeminiClient();
+
+    // 1. PRIMARY AI CONVERSATION ENGINE (Gemini)
+    if (gemini) {
+      try {
+        const systemPrompt = `You are Doctor Pup, a loving, attentive golden puppy mascot and medical companion for an elderly person named ${senior.name} (age ${senior.age}).
+Active medications: ${medsSummary || "None"}.
+Pending medicines today: ${pendingSummary}.
+Past health notes: ${memoriesSummary || "None"}.
+
+Senior just said: "${speech}".
+
+Analyze what the senior said and output a STRICT JSON object with these keys:
+{
+  "reply": "1 to 2 warm, gentle sentences responding directly to what the senior said. Speak like an affectionate companion dog. Never use emojis or em dashes.",
+  "action": "DOSE_LOGGED" if the senior explicitly states they took/swallowed/finished their medicine, "SYMPTOM" if they report pain, dizziness, or sickness, or "CONVERSATION" for any question, chat, greeting, or comment,
+  "medicationTaken": "name of medicine taken if DOSE_LOGGED, or null",
+  "symptomNote": "short note of symptom if SYMPTOM, or null"
+}`;
+
+        const response = await generateWithFallback(gemini.ai, {
+          contents: systemPrompt,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+
+        const parsed = JSON.parse(response.text || "{}");
+        const reply = parsed.reply || `I hear you, ${senior.name}. I am always right here by your side!`;
+        const action = parsed.action || "CONVERSATION";
+
+        // Handle medication dose logging if confirmed by AI
+        if (action === "DOSE_LOGGED" || parsed.medicationTaken) {
+          const targetMed =
+            senior.medications.find(
+              (m) =>
+                m.name.toLowerCase().includes(String(parsed.medicationTaken || "").toLowerCase()) ||
+                (parsed.medicationTaken && String(parsed.medicationTaken).toLowerCase().includes(m.name.toLowerCase()))
+            ) || pendingMeds[0] || senior.medications[0];
+
+          if (targetMed) {
+            await prisma.doseLog.create({
+              data: {
+                seniorId: senior.id,
+                medicationId: targetMed.id,
+                scheduledFor: new Date(),
+                takenAt: new Date(),
+                status: "TAKEN",
+                notes: `Confirmed via Doctor Pup conversation: "${speech}"`,
+              },
+            });
+
+            const updatedSenior = await prisma.seniorProfile.update({
+              where: { id: senior.id },
+              data: { streakDays: { increment: 1 } },
+            });
+
+            return NextResponse.json({
+              response: reply,
+              action: "DOSE_LOGGED",
+              medName: targetMed.name,
+              streakDays: updatedSenior.streakDays,
+            });
+          }
+        }
+
+        // Record health symptom if reported
+        if (action === "SYMPTOM" || parsed.symptomNote) {
+          await prisma.adaptiveMemory.create({
+            data: {
+              seniorId: senior.id,
+              category: "HEALTH_OBSERVATION",
+              keyFact: parsed.symptomNote || `Reported during conversation: "${speech}"`,
+            },
+          });
+        }
+
+        return NextResponse.json({
+          response: reply,
+          action,
+        });
+      } catch (geminiError) {
+        console.error("Gemini voice conversation error:", geminiError);
+      }
+    }
+
+    // 2. FALLBACK IF GEMINI IS NOT CONFIGURED
     const lower = speech.toLowerCase();
 
-    // 1. DOSE CONFIRMATION
+    // Check for explicit dose confirmation
     if (
-      lower.includes("took") ||
-      lower.includes("taken") ||
-      lower.includes("swallowed") ||
-      lower.includes("done") ||
-      lower.includes("finished my pill") ||
-      lower.includes("finished my medicine") ||
-      lower.includes("already had my")
+      (lower.includes("took") || lower.includes("taken") || lower.includes("swallowed") || lower.includes("had my")) &&
+      (lower.includes("pill") || lower.includes("medicine") || lower.includes("dose") || lower.includes("tablet"))
     ) {
-      // Find today's pending medication
-      const pendingMed = senior.medications.find(
-        (m) => !senior.doseLogs.some((l) => l.medicationId === m.id && l.status === "TAKEN")
-      );
-
+      const pendingMed = pendingMeds[0];
       if (pendingMed) {
         await prisma.doseLog.create({
           data: {
@@ -74,7 +161,7 @@ export async function POST(req: NextRequest) {
             scheduledFor: new Date(),
             takenAt: new Date(),
             status: "TAKEN",
-            notes: `Confirmed via Doctor Pup conversation: "${speech}"`,
+            notes: `Confirmed via fallback conversation: "${speech}"`,
           },
         });
 
@@ -89,26 +176,11 @@ export async function POST(req: NextRequest) {
           medName: pendingMed.name,
           streakDays: updatedSenior.streakDays,
         });
-      } else {
-        return NextResponse.json({
-          response: `All your scheduled medicines for today are already recorded, ${senior.name}. You are doing wonderful!`,
-          action: "NONE",
-        });
       }
     }
 
-    // 2. SCHEDULE QUERY
-    if (
-      lower.includes("what") ||
-      lower.includes("when") ||
-      lower.includes("schedule") ||
-      lower.includes("which pill") ||
-      lower.includes("next medicine")
-    ) {
-      const nextMed = senior.medications.find(
-        (m) => !senior.doseLogs.some((l) => l.medicationId === m.id && l.status === "TAKEN")
-      );
-
+    if (lower.includes("next medicine") || lower.includes("what pill") || lower.includes("medicine schedule")) {
+      const nextMed = pendingMeds[0];
       if (nextMed) {
         return NextResponse.json({
           response: `Your next medicine is ${nextMed.name} ${nextMed.dosage}, scheduled for ${nextMed.timeOfDay}. Instructions: ${nextMed.instructions}.`,
@@ -122,85 +194,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. HEALTH SYMPTOM / GENERAL CONVERSATION VIA GEMINI AI
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-
-    if (apiKey) {
-      try {
-        const ai = new GoogleGenAI({ apiKey });
-        const medsSummary = senior.medications.map((m) => `${m.name} (${m.dosage})`).join(", ");
-        const memoriesSummary = senior.memories.map((m) => m.keyFact).join("; ");
-
-        const systemPrompt = `You are Doctor Pup, an affectionate, attentive dog mascot and health companion for an elderly person named ${senior.name}.
-Active medications: ${medsSummary}.
-Recent health observations: ${memoriesSummary}.
-
-Guidelines:
-1. Speak warmly, respectfully, and gently as their loving companion.
-2. Keep responses very short (1 to 2 sentences maximum) so it feels like natural spoken dialogue.
-3. If they mention feeling pain, dizzy, stiff, or unwell, offer gentle, reassuring advice and tell them you will let their caregiver know.
-4. Do NOT use medical jargon, complex words, emojis, or em dashes. Keep language simple, comforting, and clear.`;
-
-        const response = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
-          contents: [
-            { role: "user", parts: [{ text: `${systemPrompt}\n\nSenior said: "${speech}"` }] },
-          ],
-        });
-
-        const reply = response.text?.trim() || `I am right here with you, ${senior.name}. You are doing great today.`;
-
-        // Check if symptom was described
-        if (
-          lower.includes("hurt") ||
-          lower.includes("pain") ||
-          lower.includes("dizzy") ||
-          lower.includes("sick") ||
-          lower.includes("tired") ||
-          lower.includes("ache")
-        ) {
-          await prisma.adaptiveMemory.create({
-            data: {
-              seniorId: senior.id,
-              category: "HEALTH_OBSERVATION",
-              keyFact: `Reported during voice conversation: "${speech}"`,
-            },
-          });
-        }
-
-        return NextResponse.json({
-          response: reply,
-          action: "CONVERSATION",
-        });
-      } catch (geminiError) {
-        console.error("Gemini voice conversation fallback:", geminiError);
-      }
-    }
-
-    // Fallback if AI key unavailable
-    if (
-      lower.includes("hurt") ||
-      lower.includes("pain") ||
-      lower.includes("dizzy") ||
-      lower.includes("headache") ||
-      lower.includes("stomach")
-    ) {
-      await prisma.adaptiveMemory.create({
-        data: {
-          seniorId: senior.id,
-          category: "HEALTH_OBSERVATION",
-          keyFact: `Reported discomfort via voice: "${speech}"`,
-        },
-      });
-
-      return NextResponse.json({
-        response: `I understand, ${senior.name}. Please sit down, sip some water, and rest. I have noted this down for your caregiver.`,
-        action: "SYMPTOM",
-      });
-    }
-
     return NextResponse.json({
-      response: `I heard you, ${senior.name}. I am always here by your side. Let me know if you need any help with your medicines today.`,
+      response: `I hear you, ${senior.name}. You are doing wonderful today and I am right here by your side.`,
       action: "CONVERSATION",
     });
   } catch (error) {

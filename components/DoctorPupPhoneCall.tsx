@@ -92,11 +92,7 @@ export function DoctorPupPhoneCall({
     startRecording,
     stopRecording,
     cancelRecording,
-  } = useAudioRecorder((transcript) => {
-    if (transcript) {
-      handleSeniorInput(transcript);
-    }
-  });
+  } = useAudioRecorder();
 
   // Play Doctor Pup's neural voice response (synchronized with mouth animation)
   const speakPupResponse = useCallback(

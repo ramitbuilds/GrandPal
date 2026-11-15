@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { getGeminiClient, generateWithFallback } from "@/lib/gemini";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -21,14 +21,12 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     const base64Audio = buffer.toString("base64");
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const gemini = getGeminiClient();
 
-    // 1. Primary STT: Google Gemini 1.5 Flash Multimodal Audio Transcription
-    if (apiKey) {
+    // 1. Primary STT: Google Gemini Multimodal Audio Transcription
+    if (gemini) {
       try {
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
+        const response = await generateWithFallback(gemini.ai, {
           contents: [
             {
               role: "user",
@@ -40,14 +38,23 @@ export async function POST(req: NextRequest) {
                   },
                 },
                 {
-                  text: "You are a medical speech-to-text transcriber for an elderly person. Transcribe their spoken words in English accurately. Do not add quotes, commentary, or markdown. Only return the exact spoken words. If no speech is audible, return nothing.",
+                  text: "You are an accurate medical speech-to-text transcriber for an elderly person. Transcribe their spoken words in English accurately. Do not add quotes, commentary, timestamps, or markdown. Only return the exact spoken words. If no speech is audible or it is only silence, return nothing.",
                 },
               ],
             },
           ],
         });
 
-        const transcript = response.text?.trim() || "";
+        let transcript = response.text?.trim() || "";
+        transcript = transcript
+          .replace(/^["'`]|["'`]$/g, "")
+          .replace(/^```[a-z]*\n|```$/g, "")
+          .trim();
+
+        if (transcript.toLowerCase() === "[silence]" || transcript.toLowerCase() === "nothing") {
+          transcript = "";
+        }
+
         return NextResponse.json({ transcript, provider: "gemini" });
       } catch (geminiErr) {
         console.warn("Gemini audio STT failed, falling back to local runner:", geminiErr);

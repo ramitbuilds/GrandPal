@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getGeminiClient, generateWithFallback } from "@/lib/gemini";
 import nodemailer from "nodemailer";
 
 export async function POST(req: NextRequest) {
@@ -45,14 +46,11 @@ export async function POST(req: NextRequest) {
     let clinicalSummary = "";
     let extractedFact = "";
 
-    // Check if Google Gemini API key is available
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    // Check if Google Gemini is available
+    const gemini = getGeminiClient();
 
-    if (apiKey) {
+    if (gemini) {
       try {
-        const { GoogleGenAI } = await import("@google/genai");
-        const ai = new GoogleGenAI({ apiKey });
-
         const systemPrompt = `You are Doctor Pup, a gentle, kind medical assistant for an elderly senior named ${senior.name} (age ${senior.age}).
 Active medications: ${medNames || "None"}.
 Past health notes: ${memoriesText || "None"}.
@@ -66,8 +64,7 @@ Return a STRICT JSON object with these 4 keys:
 3. "clinicalSummary": 1 sentence summarizing the symptom and potential medication interaction for the caregiver.
 4. "extractedFact": a short 1-sentence note to remember (e.g. "Reported mild dizziness after breakfast") or empty string.`;
 
-        const response = await ai.models.generateContent({
-          model: "gemini-1.5-flash",
+        const response = await generateWithFallback(gemini.ai, {
           contents: systemPrompt,
           config: {
             responseMimeType: "application/json",

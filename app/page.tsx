@@ -149,15 +149,15 @@ export default function Home() {
     isTranscribing,
     startRecording,
     stopRecording,
-  } = useAudioRecorder((text) => handleVoiceInput(text));
+  } = useAudioRecorder();
 
   const toggleMicrophone = async () => {
     if (isRecording) {
       const captured = await stopRecording();
-      if (captured) {
-        handleVoiceInput(captured);
+      if (captured && captured.trim()) {
+        handleVoiceInput(captured.trim());
       } else {
-        toast.info("No speech detected. Click Talk to Doctor Pup to try again.");
+        toast.info("No speech detected. Please speak clearly into your microphone.");
       }
     } else {
       stopVoice();
